@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/input";
+import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
 import type { Appointment, Role } from "@/lib/types";
 import { type ReasonValues, reasonSchema } from "@/lib/validation";
@@ -35,6 +36,13 @@ const PATHS: Record<Action, string> = {
   reject: "reject",
   cancel: "cancel",
   complete: "complete",
+};
+
+const SUCCESS_COPY: Record<Action, string> = {
+  confirm: "Appointment confirmed",
+  reject: "Request rejected",
+  cancel: "Appointment cancelled",
+  complete: "Appointment marked completed",
 };
 
 export function AppointmentActions({
@@ -71,10 +79,14 @@ export function AppointmentActions({
       api.post<Appointment>(`/api/appointments/${appointment.id}/${PATHS[action]}`, {
         reason: reason.trim() || null,
       }),
-    onSuccess: () => {
+    onSuccess: (_data, { action }) => {
       setReasonFor(null);
       form.reset({ reason: "" });
+      toastSuccess(SUCCESS_COPY[action]);
       void queryClient.invalidateQueries();
+    },
+    onError: (caught) => {
+      toastError("Action failed", errorMessage(caught));
     },
   });
 

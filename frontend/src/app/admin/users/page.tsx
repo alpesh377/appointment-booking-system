@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { useForm } from "react-hook-form";
 
-import { ErrorState, Loading, NoItems } from "@/components/page-state";
+import { ErrorState, NoItems } from "@/components/page-state";
 import { RequireRole } from "@/components/require-role";
 import {
   AlertDialog,
@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/dialog";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input, Textarea } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
 import { applyApiFieldErrors } from "@/lib/form-errors";
 import type { Provider, User } from "@/lib/types";
@@ -92,10 +94,59 @@ function UsersManager() {
     queryFn: () => api.get<Provider[]>("/api/admin/providers"),
   });
 
+  type ToggleVars = {
+    id: string;
+    path: string;
+    name: string;
+    deactivating: boolean;
+    kind: "customer" | "provider";
+  };
+
   const act = useMutation({
-    mutationFn: ({ path }: { path: string }) => api.post(path, {}),
-    onSuccess: () => {
+    mutationFn: (vars: ToggleVars) => api.post(vars.path, {}),
+    // Optimistic: flip the account's badge immediately in its cache and roll
+    // it back verbatim if the request fails.
+    onMutate: async ({ kind, id, deactivating }) => {
+      await queryClient.cancelQueries({ queryKey: ["admin"] });
+      const customersKey = ["admin", "customers", search] as const;
+      const previousCustomers = queryClient.getQueryData<User[]>(customersKey);
+      const previousProviders = queryClient.getQueryData<Provider[]>(["admin", "providers"]);
+      const flipUser = (user: User): User =>
+        user.id === id ? { ...user, is_active: !deactivating } : user;
+      const flipProvider = (provider: Provider): Provider =>
+        provider.id === id ? { ...provider, is_active: !deactivating } : provider;
+      if (kind === "customer" && previousCustomers) {
+        queryClient.setQueryData<User[]>(customersKey, (list) => list?.map(flipUser));
+      }
+      if (kind === "provider" && previousProviders) {
+        queryClient.setQueryData<Provider[]>(["admin", "providers"], (list) =>
+          list?.map(flipProvider),
+        );
+      }
+      return { previousCustomers, previousProviders };
+    },
+    onSuccess: (_data, vars) => {
+      toastSuccess(
+        `${vars.name} ${vars.deactivating ? "deactivated" : "reactivated"}`,
+        vars.kind === "customer"
+          ? vars.deactivating
+            ? "They can no longer sign in; their appointments are unchanged."
+            : "They can sign in again."
+          : vars.deactivating
+            ? "Removed from discovery; future appointments are unchanged."
+            : "They are bookable again.",
+      );
       void queryClient.invalidateQueries();
+    },
+    onError: (caught, _vars, context) => {
+      const customersKey = ["admin", "customers", search] as const;
+      if (context?.previousCustomers) {
+        queryClient.setQueryData(customersKey, context.previousCustomers);
+      }
+      if (context?.previousProviders) {
+        queryClient.setQueryData(["admin", "providers"], context.previousProviders);
+      }
+      toastError("Action failed", errorMessage(caught));
     },
   });
 
@@ -107,12 +158,14 @@ function UsersManager() {
         bio: values.bio?.trim() || null,
         timezone: values.timezone,
       }),
-    onSuccess: () => {
+    onSuccess: (provider) => {
       setEditing(null);
+      toastSuccess("Provider updated", provider.display_name);
       void queryClient.invalidateQueries();
     },
     onError: (caught) => {
       applyApiFieldErrors(editForm.setError, caught);
+      toastError("Could not save the provider", errorMessage(caught));
     },
   });
 
@@ -128,12 +181,14 @@ function UsersManager() {
         phone: values.phone?.trim() || null,
         timezone: values.timezone,
       }),
-    onSuccess: () => {
+    onSuccess: (provider) => {
       createForm.reset(EMPTY_PROVIDER);
+      toastSuccess("Provider account created", provider.display_name);
       void queryClient.invalidateQueries();
     },
     onError: (caught) => {
       applyApiFieldErrors(createForm.setError, caught);
+      toastError("Could not create the provider", errorMessage(caught));
     },
   });
 
@@ -164,7 +219,13 @@ function UsersManager() {
       toggle.kind === "customer"
         ? `/api/admin/users/${toggle.id}/${toggle.active ? "deactivate" : "reactivate"}`
         : `/api/providers/${toggle.id}/${toggle.active ? "deactivate" : "reactivate"}`;
-    act.mutate({ path });
+    act.mutate({
+      id: toggle.id,
+      path,
+      name: toggle.name,
+      deactivating: toggle.active,
+      kind: toggle.kind,
+    });
     setPendingToggle(null);
   }
 
@@ -196,7 +257,13 @@ function UsersManager() {
             aria-label="Search customers"
             className="sm:max-w-sm"
           />
-          {customers.isPending ? <Loading label="Loading customers…" /> : null}
+          {customers.isPending ? (
+            <div className="space-y-2" role="status" aria-label="Loading customers…">
+              {[0, 1, 2].map((row) => (
+                <Skeleton key={row} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : null}
           {customers.isError ? (
             <ErrorState message={errorMessage(customers.error)} retry={() => void customers.refetch()} />
           ) : null}
@@ -243,7 +310,13 @@ function UsersManager() {
           <CardDescription>Includes deactivated providers.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {providers.isPending ? <Loading label="Loading providers…" /> : null}
+          {providers.isPending ? (
+            <div className="space-y-2" role="status" aria-label="Loading providers…">
+              {[0, 1, 2].map((row) => (
+                <Skeleton key={row} className="h-12 w-full" />
+              ))}
+            </div>
+          ) : null}
           {providers.isError ? (
             <ErrorState message={errorMessage(providers.error)} retry={() => void providers.refetch()} />
           ) : null}

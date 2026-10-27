@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 
-import { ErrorState, Loading, NoItems } from "@/components/page-state";
+import { ErrorState, NoItems } from "@/components/page-state";
 import { useAuth } from "@/components/providers";
 import { RequireRole } from "@/components/require-role";
 import { Alert } from "@/components/ui/alert";
@@ -13,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
 import { applyApiFieldErrors } from "@/lib/form-errors";
 import type { Service } from "@/lib/types";
@@ -42,24 +44,38 @@ function ServicesManager() {
         category: values.category,
         duration_minutes: values.duration_minutes,
       }),
-    onSuccess: () => {
+    onSuccess: (service) => {
       form.reset(SERVICE_DEFAULTS);
+      toastSuccess("Service added", `${service.name} is now bookable by customers.`);
       void queryClient.invalidateQueries();
     },
     onError: (caught) => {
       applyApiFieldErrors(form.setError, caught);
+      toastError("Could not save the service", errorMessage(caught));
     },
   });
 
   const deactivate = useMutation({
     mutationFn: (id: string) => api.post<Service>(`/api/services/${id}/deactivate`),
     onSuccess: () => {
+      toastSuccess("Service deactivated");
       void queryClient.invalidateQueries();
     },
+    onError: (caught) => toastError("Could not deactivate", errorMessage(caught)),
   });
 
   if (!providerId) return <ErrorState message="Your account has no provider profile." />;
-  if (services.isPending) return <Loading label="Loading services…" />;
+  if (services.isPending) {
+    return (
+      <div className="space-y-6" role="status" aria-label="Loading services…">
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-24 w-full rounded-xl" />
+        {[0, 1, 2].map((row) => (
+          <Skeleton key={row} className="h-16 w-full rounded-xl" />
+        ))}
+      </div>
+    );
+  }
   if (services.isError) {
     return <ErrorState message={errorMessage(services.error)} retry={() => void services.refetch()} />;
   }

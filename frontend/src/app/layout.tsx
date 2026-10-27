@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { Providers } from "@/components/providers";
 import { SiteHeader } from "@/components/site-header";
+import { Toaster } from "@/components/ui/sonner";
 
 import "./globals.css";
 
@@ -21,6 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             Appointly — appointments are shown in the provider&apos;s local timezone.
           </footer>
         </Providers>
+        <Toaster position="top-center" />
       </body>
     </html>
   );

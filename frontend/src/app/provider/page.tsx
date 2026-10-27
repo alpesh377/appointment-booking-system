@@ -5,15 +5,23 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { AppointmentCard } from "@/components/appointment-card";
-import { ErrorState, Loading, NoItems } from "@/components/page-state";
+import { ErrorState, NoItems } from "@/components/page-state";
 import { RequireRole } from "@/components/require-role";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
 import type { Appointment, ProviderDashboard } from "@/lib/types";
 
 type Transition = "confirm" | "reject" | "complete";
+
+const ACTION_COPY: Record<Transition, { success: string; detail: string }> = {
+  confirm: { success: "Appointment confirmed", detail: "The customer can see the confirmed time." },
+  reject: { success: "Request rejected", detail: "The pending request declined." },
+  complete: { success: "Appointment completed", detail: "Marked as completed." },
+};
 
 function ProviderHome() {
   const queryClient = useQueryClient();
@@ -27,14 +35,54 @@ function ProviderHome() {
   const transition = useMutation({
     mutationFn: ({ id, action }: { id: string; action: Transition }) =>
       api.post<Appointment>(`/api/appointments/${id}/${action}`, { reason: null }),
-    onSuccess: () => {
+    // Optimistic removal from the action lists: the transition moves the
+    // appointment out of every dashboard column until the refetch settles it
+    // in the right one. Rollback restores the previous dashboard verbatim.
+    onMutate: async ({ id }) => {
+      await queryClient.cancelQueries({ queryKey: ["dashboard", "provider"] });
+      const previous = queryClient.getQueryData<ProviderDashboard>(["dashboard", "provider"]);
+      queryClient.setQueryData<ProviderDashboard>(["dashboard", "provider"], (dash) =>
+        dash
+          ? {
+              today: dash.today.filter((a) => a.id !== id),
+              upcoming: dash.upcoming.filter((a) => a.id !== id),
+              pending: dash.pending.filter((a) => a.id !== id),
+              awaiting_completion: dash.awaiting_completion.filter((a) => a.id !== id),
+              conflicts: dash.conflicts.filter((a) => a.id !== id),
+            }
+          : dash,
+      );
+      return { previous };
+    },
+    onSuccess: (_data, vars) => {
       setError(null);
+      toastSuccess(ACTION_COPY[vars.action].success, ACTION_COPY[vars.action].detail);
       void queryClient.invalidateQueries();
     },
-    onError: (caught) => setError(errorMessage(caught)),
+    onError: (caught, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(["dashboard", "provider"], context.previous);
+      }
+      const message = errorMessage(caught);
+      setError(message);
+      toastError("Action failed", message);
+    },
   });
 
-  if (dashboard.isPending) return <Loading label="Loading your dashboard…" />;
+  if (dashboard.isPending) {
+    return (
+      <div className="space-y-8" role="status" aria-label="Loading your dashboard…">
+        <Skeleton className="h-8 w-64" />
+        {[0, 1, 2, 3].map((block) => (
+          <div key={block} className="space-y-3">
+            <Skeleton className="h-6 w-40" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (dashboard.isError) {
     return (
       <ErrorState

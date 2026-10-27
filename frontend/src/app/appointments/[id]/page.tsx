@@ -6,12 +6,13 @@ import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppointmentActions } from "@/components/appointment-actions";
-import { FadeIn } from "@/components/motion";
+import { FadeIn, StatusBadge } from "@/components/motion";
 import { ErrorState, Loading } from "@/components/page-state";
 import { useAuth } from "@/components/providers";
 import { ReschedulePanel } from "@/components/reschedule-panel";
-import { StatusBadge } from "@/components/ui/badge";
+import { StatusBadge as StaticStatusBadge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { formatInstant, formatTime } from "@/lib/format";
 import type { Appointment } from "@/lib/types";
@@ -28,7 +29,16 @@ function Detail() {
     retry: false,
   });
 
-  if (appointment.isPending) return <Loading label="Loading appointment…" />;
+  if (appointment.isPending) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6" role="status" aria-label="Loading appointment…">
+        <Skeleton className="h-8 w-56" />
+        <Skeleton className="h-40 w-full rounded-xl" />
+        <Skeleton className="h-24 w-full rounded-xl" />
+        <Skeleton className="h-48 w-full rounded-xl" />
+      </div>
+    );
+  }
   if (appointment.isError) {
     return (
       <ErrorState
@@ -67,7 +77,9 @@ function Detail() {
             {data.service.name} with {data.provider.display_name}
           </p>
         </div>
-        <StatusBadge status={data.status} />
+        <StatusBadge statusKey={data.status}>
+          <StaticStatusBadge status={data.status} />
+        </StatusBadge>
       </div>
 
       <Card>

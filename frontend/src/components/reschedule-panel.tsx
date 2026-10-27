@@ -8,6 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
 import { formatTime } from "@/lib/format";
 import type { Appointment, SlotResponse } from "@/lib/types";
@@ -40,9 +41,16 @@ export function ReschedulePanel({ appointment }: { appointment: Appointment }) {
     onSuccess: () => {
       setSelected(null);
       setError(null);
+      toastSuccess(
+        "Appointment rescheduled",
+        "A new pending request was created for the new time.",
+      );
       void queryClient.invalidateQueries();
     },
-    onError: (caught) => setError(errorMessage(caught)),
+    onError: (caught) => {
+      setError(errorMessage(caught));
+      toastError("Could not reschedule", errorMessage(caught));
+    },
   });
 
   return (

@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { ErrorState, Loading, NoItems } from "@/components/page-state";
+import { ErrorState, NoItems } from "@/components/page-state";
 import { RequireRole } from "@/components/require-role";
 import { Alert } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/ui/badge";
@@ -12,6 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
 import { formatInstant } from "@/lib/format";
 import type { AdminAppointments, Appointment, Provider, User } from "@/lib/types";
@@ -62,11 +64,42 @@ function AdminAppointments() {
   const cancel = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
       api.post<Appointment>(`/api/admin/appointments/${id}/cancel`, { reason: reason || null }),
+    // Optimistic: the row disappears from the list immediately and is
+    // restored verbatim when the cancel fails.
+    onMutate: async ({ id }) => {
+      await queryClient.cancelQueries({ queryKey: ["admin", "appointments"] });
+      const previous = queryClient.getQueryData<AdminAppointments>(["admin", "appointments", "", providerId, customerId, dateFrom, dateTo, page]);
+      const next = previous
+        ? {
+            ...previous,
+            items: previous.items.filter((appointment) => appointment.id !== id),
+            total: Math.max(0, previous.total - 1),
+          }
+        : undefined;
+      if (next) {
+        queryClient.setQueryData<AdminAppointments>(
+          ["admin", "appointments", "", providerId, customerId, dateFrom, dateTo, page],
+          next,
+        );
+      }
+      return { previous };
+    },
     onSuccess: () => {
       setError(null);
+      toastSuccess("Appointment cancelled", "The supervisory cancellation is recorded.");
       void queryClient.invalidateQueries();
     },
-    onError: (caught) => setError(errorMessage(caught)),
+    onError: (caught, _vars, context) => {
+      if (context?.previous) {
+        queryClient.setQueryData(
+          ["admin", "appointments", "", providerId, customerId, dateFrom, dateTo, page],
+          context.previous,
+        );
+      }
+      const message = errorMessage(caught);
+      setError(message);
+      toastError("Could not cancel the appointment", message);
+    },
   });
 
   const totalPages = appointments.data
@@ -169,7 +202,13 @@ function AdminAppointments() {
         </CardContent>
       </Card>
 
-      {appointments.isPending ? <Loading label="Loading appointments…" /> : null}
+      {appointments.isPending ? (
+        <div className="space-y-3" role="status" aria-label="Loading appointments…">
+          {[0, 1, 2, 3].map((row) => (
+            <Skeleton key={row} className="h-16 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : null}
       {appointments.isError ? (
         <ErrorState
           message={errorMessage(appointments.error)}

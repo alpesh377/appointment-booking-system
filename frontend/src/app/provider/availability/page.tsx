@@ -14,6 +14,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { Input, Select, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
 import { applyApiFieldErrors } from "@/lib/form-errors";
 import { WEEKDAYS, formatInstant } from "@/lib/format";
@@ -128,9 +130,13 @@ function AvailabilityManager() {
       api.put<AvailabilityState>(`/api/providers/${providerId}/availability/${path}`, body),
     onSuccess: () => {
       setError(null);
+      toastSuccess("Availability saved", "Your windows, breaks and overrides are up to date.");
       void queryClient.invalidateQueries();
     },
-    onError: (caught) => setError(errorMessage(caught)),
+    onError: (caught) => {
+      setError(errorMessage(caught));
+      toastError("Could not save availability", errorMessage(caught));
+    },
   });
 
   const savePractice = useMutation({
@@ -150,24 +156,45 @@ function AvailabilityManager() {
         timezone: provider.timezone,
       });
       void queryClient.invalidateQueries();
+      toastSuccess(
+        "Practice details saved",
+        provider.timezone === timezone ? undefined : `Future slots will use ${provider.timezone}.`,
+      );
     },
     onError: (caught) => {
       applyApiFieldErrors(practiceForm.setError, caught);
+      toastError("Could not save practice details", errorMessage(caught));
     },
   });
 
   const deleteOverride = useMutation({
     mutationFn: (date: string) =>
       api.delete<AvailabilityState>(`/api/providers/${providerId}/availability/overrides/${date}`),
-    onSuccess: () => {
+    onSuccess: (_state, date) => {
       setError(null);
+      toastSuccess("Override removed", date);
       void queryClient.invalidateQueries();
     },
-    onError: (caught) => setError(errorMessage(caught)),
+    onError: (caught) => {
+      setError(errorMessage(caught));
+      toastError("Could not remove the override", errorMessage(caught));
+    },
   });
 
   if (!providerId) return <ErrorState message="Your account has no provider profile." />;
-  if (state.isPending || detail.isPending) return <Loading label="Loading availability…" />;
+  if (state.isPending || detail.isPending) {
+    return (
+      <div className="space-y-6" role="status" aria-label="Loading availability…">
+        <Skeleton className="h-8 w-52" />
+        {[0, 1, 2, 3].map((block) => (
+          <div key={block} className="space-y-3">
+            <Skeleton className="h-6 w-44" />
+            <Skeleton className="h-40 w-full rounded-xl" />
+          </div>
+        ))}
+      </div>
+    );
+  }
   if (state.isError) {
     return <ErrorState message={errorMessage(state.error)} retry={() => void state.refetch()} />;
   }

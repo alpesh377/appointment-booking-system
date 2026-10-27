@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 
-import { ErrorState, Loading } from "@/components/page-state";
+import { ErrorState } from "@/components/page-state";
 import { RequireRole } from "@/components/require-role";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, errorMessage } from "@/lib/api";
 import type { AdminStats } from "@/lib/types";
 
@@ -26,7 +27,19 @@ function AdminOverview() {
     queryFn: () => api.get<AdminStats>("/api/admin/stats"),
   });
 
-  if (stats.isPending) return <Loading label="Loading platform totals…" />;
+  if (stats.isPending) {
+    return (
+      <div className="space-y-8" role="status" aria-label="Loading platform totals…">
+        <Skeleton className="h-8 w-56" />
+        <div className="grid gap-4 sm:grid-cols-3">
+          {[0, 1, 2].map((card) => (
+            <Skeleton key={card} className="h-28 w-full rounded-xl" />
+          ))}
+        </div>
+        <Skeleton className="h-64 w-full rounded-xl" />
+      </div>
+    );
+  }
   if (stats.isError) {
     return <ErrorState message={errorMessage(stats.error)} retry={() => void stats.refetch()} />;
   }
