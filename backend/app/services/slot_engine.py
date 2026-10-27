@@ -63,10 +63,7 @@ def generate_slots(
             day += timedelta(days=1)
             continue
 
-        if override is not None:
-            windows = list(override.windows)
-        else:
-            windows = weekly_windows.get(day.weekday(), [])
+        windows = list(override.windows) if override is not None else weekly_windows.get(day.weekday(), [])
 
         raw_breaks = breaks_by_weekday.get(day.weekday(), []) + breaks_by_date.get(day, [])
         break_intervals: list[tuple[datetime, datetime]] = []
@@ -85,18 +82,12 @@ def generate_slots(
                 candidate_end = candidate + step
                 start_instant = localize(day, candidate.time(), tz)
                 end_instant = (
-                    start_instant + timedelta(minutes=duration_minutes)
-                    if start_instant is not None
-                    else None
+                    start_instant + timedelta(minutes=duration_minutes) if start_instant is not None else None
                 )
                 if start_instant is not None and end_instant is not None:
-                    blocked = any(
-                        _overlaps(start_instant, end_instant, bs, be) for bs, be in break_intervals
-                    )
+                    blocked = any(_overlaps(start_instant, end_instant, bs, be) for bs, be in break_intervals)
                     if not blocked:
-                        blocked = any(
-                            _overlaps(start_instant, end_instant, bs, be) for bs, be in busy
-                        )
+                        blocked = any(_overlaps(start_instant, end_instant, bs, be) for bs, be in busy)
                     if not blocked and start_instant > notice_cutoff:
                         slots.append(start_instant)
                 candidate = candidate_end

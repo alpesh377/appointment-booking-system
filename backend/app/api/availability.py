@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import date, time
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_provider
-from app.core.config import settings
 from app.core.errors import AppError, forbidden, not_found
 from app.core.timeutil import utcnow, zone
 from app.db import get_db
@@ -21,6 +20,7 @@ from app.models import (
     User,
 )
 from app.repositories.appointments import acquire_provider_lock, sweep_expired
+from app.schemas import BreaksUpdate, OverridesUpdate, WindowsUpdate
 from app.services import lifecycle
 from app.services.availability import get_active_service, get_provider, load_slots
 from app.services.serialization import appointment_payload
@@ -79,17 +79,13 @@ def _availability_state(db: Session, provider: ProviderProfile) -> dict:
     )
     overrides = list(
         db.execute(
-            select(DateOverride)
-            .where(DateOverride.provider_id == provider.id)
-            .order_by(DateOverride.date)
+            select(DateOverride).where(DateOverride.provider_id == provider.id).order_by(DateOverride.date)
         ).scalars()
     )
     windows_by_override: dict[uuid.UUID, list[dict]] = {}
     if overrides:
         rows = db.execute(
-            select(DateOverrideWindow).where(
-                DateOverrideWindow.override_id.in_([o.id for o in overrides])
-            )
+            select(DateOverrideWindow).where(DateOverrideWindow.override_id.in_([o.id for o in overrides]))
         ).scalars()
         for window in rows:
             windows_by_override.setdefault(window.override_id, []).append(
@@ -124,9 +120,7 @@ def _availability_state(db: Session, provider: ProviderProfile) -> dict:
                 "date": item.date.isoformat(),
                 "is_closed": item.is_closed,
                 "note": item.note,
-                "windows": sorted(
-                    windows_by_override.get(item.id, []), key=lambda w: w["start_time"]
-                ),
+                "windows": sorted(windows_by_override.get(item.id, []), key=lambda w: w["start_time"]),
             }
             for item in overrides
         ],
@@ -170,32 +164,16 @@ def read_availability(
 @router.put("/providers/{provider_id}/availability/windows", summary="Replace working windows")
 def replace_windows(
     provider_id: uuid.UUID,
-    payload: dict,
+    payload: WindowsUpdate,
     user: User = Depends(require_provider),
     db: Session = Depends(get_db),
 ) -> dict:
     provider = _owned_provider(user, provider_id)
-    raw = payload.get("windows", [])
-    windows = []
-    for item in raw:
-        try:
-            windows.append(
-                (
-                    int(item["weekday"]),
-                    time.fromisoformat(item["start_time"]),
-                    time.fromisoformat(item["end_time"]),
-                )
-            )
-        except (KeyError, TypeError, ValueError):
-            raise AppError(422, "VALIDATION_ERROR", "Each window needs weekday, start and end.")
+    windows = [(item.weekday, item.start_time, item.end_time) for item in payload.windows]
     _validate_windows(windows)
     db.execute(delete(AvailabilityRule).where(AvailabilityRule.provider_id == provider.id))
     for weekday, start, end in windows:
-        db.add(
-            AvailabilityRule(
-                provider_id=provider.id, weekday=weekday, start_time=start, end_time=end
-            )
-        )
+        db.add(AvailabilityRule(provider_id=provider.id, weekday=weekday, start_time=start, end_time=end))
     db.commit()
     return _availability_state(db, provider)
 
@@ -203,41 +181,23 @@ def replace_windows(
 @router.put("/providers/{provider_id}/availability/breaks", summary="Replace breaks")
 def replace_breaks(
     provider_id: uuid.UUID,
-    payload: dict,
+    payload: BreaksUpdate,
     user: User = Depends(require_provider),
     db: Session = Depends(get_db),
 ) -> dict:
     provider = _owned_provider(user, provider_id)
     today = utcnow().astimezone(zone(provider.timezone)).date()
-    raw = payload.get("breaks", [])
-    scheduled = []
-    for item in raw:
-        try:
-            start = time.fromisoformat(item["start_time"])
-            end = time.fromisoformat(item["end_time"])
-        except (KeyError, TypeError, ValueError):
-            raise AppError(422, "VALIDATION_ERROR", "Each break needs a start and end time.")
-        if end <= start:
-            raise AppError(422, "VALIDATION_ERROR", "A break must end after it starts.")
-        weekday = item.get("weekday")
-        on_date = item.get("date")
-        if (weekday is None) == (on_date is None):
-            raise AppError(422, "VALIDATION_ERROR", "Provide exactly one of weekday or date.")
-        parsed_date = None
-        if on_date is not None:
-            try:
-                parsed_date = date.fromisoformat(on_date)
-            except ValueError:
-                raise AppError(422, "VALIDATION_ERROR", "The break date is invalid.") from None
-            if parsed_date < today:
-                raise AppError(422, "VALIDATION_ERROR", "Availability cannot be edited for past dates.")
+    scheduled: list[ScheduleBreak] = []
+    for item in payload.breaks:
+        if item.date is not None and item.date < today:
+            raise AppError(422, "VALIDATION_ERROR", "Availability cannot be edited for past dates.")
         scheduled.append(
             ScheduleBreak(
                 provider_id=provider.id,
-                weekday=weekday,
-                on_date=parsed_date,
-                start_time=start,
-                end_time=end,
+                weekday=item.weekday,
+                on_date=item.date,
+                start_time=item.start_time,
+                end_time=item.end_time,
             )
         )
     db.execute(delete(ScheduleBreak).where(ScheduleBreak.provider_id == provider.id))
@@ -250,46 +210,29 @@ def replace_breaks(
 @router.put("/providers/{provider_id}/availability/overrides", summary="Upsert date overrides")
 def upsert_overrides(
     provider_id: uuid.UUID,
-    payload: dict,
+    payload: OverridesUpdate,
     user: User = Depends(require_provider),
     db: Session = Depends(get_db),
 ) -> dict:
     provider = _owned_provider(user, provider_id)
     today = utcnow().astimezone(zone(provider.timezone)).date()
-    raw = payload.get("overrides", [])
     seen: set[date] = set()
-    parsed = []
-    for item in raw:
-        try:
-            on_date = date.fromisoformat(item["date"])
-        except (KeyError, TypeError, ValueError):
-            raise AppError(422, "VALIDATION_ERROR", "Each override needs a date.") from None
-        if on_date in seen:
+    parsed: list[tuple[date, bool, str | None, list[tuple[time, time]]]] = []
+    for item in payload.overrides:
+        if item.date in seen:
             raise AppError(422, "VALIDATION_ERROR", "A date may have only one override.")
-        seen.add(on_date)
-        if on_date < today:
+        seen.add(item.date)
+        if item.date < today:
             raise AppError(422, "VALIDATION_ERROR", "Availability cannot be edited for past dates.")
-        is_closed = bool(item.get("is_closed", False))
-        raw_windows = item.get("windows", [])
         windows: list[tuple[time, time]] = []
-        if not is_closed:
-            for window in raw_windows:
-                try:
-                    start = time.fromisoformat(window["start_time"])
-                    end = time.fromisoformat(window["end_time"])
-                except (KeyError, TypeError, ValueError):
-                    raise AppError(422, "VALIDATION_ERROR", "Override windows are invalid.")
-                if end <= start:
-                    raise AppError(422, "VALIDATION_ERROR", "An override window must end after it starts.")
-                windows.append((start, end))
+        if not item.is_closed:
+            windows = [(window.start_time, window.end_time) for window in item.windows]
             _validate_override_windows(windows)
-        parsed.append((on_date, is_closed, item.get("note"), windows))
+        parsed.append((item.date, item.is_closed, item.note, windows))
 
     for on_date, is_closed, note, windows in parsed:
         existing = db.execute(
-            select(DateOverride).where(
-                DateOverride.provider_id == provider.id, DateOverride.date == on_date
-            )
+            select(DateOverride).where(DateOverride.provider_id == provider.id, DateOverride.date == on_date)
         ).scalar_one_or_none()
         if existing is None:
             existing = DateOverride(provider_id=provider.id, date=on_date)
@@ -297,20 +240,14 @@ def upsert_overrides(
             db.flush()
         existing.is_closed = is_closed
         existing.note = note
-        db.execute(
-            delete(DateOverrideWindow).where(DateOverrideWindow.override_id == existing.id)
-        )
+        db.execute(delete(DateOverrideWindow).where(DateOverrideWindow.override_id == existing.id))
         for start, end in windows:
-            db.add(
-                DateOverrideWindow(override_id=existing.id, start_time=start, end_time=end)
-            )
+            db.add(DateOverrideWindow(override_id=existing.id, start_time=start, end_time=end))
     db.commit()
     return _availability_state(db, provider)
 
 
-@router.delete(
-    "/providers/{provider_id}/availability/overrides/{on_date}", summary="Remove a date override"
-)
+@router.delete("/providers/{provider_id}/availability/overrides/{on_date}", summary="Remove a date override")
 def delete_override(
     provider_id: uuid.UUID,
     on_date: date,
@@ -319,9 +256,7 @@ def delete_override(
 ) -> dict:
     provider = _owned_provider(user, provider_id)
     override = db.execute(
-        select(DateOverride).where(
-            DateOverride.provider_id == provider.id, DateOverride.date == on_date
-        )
+        select(DateOverride).where(DateOverride.provider_id == provider.id, DateOverride.date == on_date)
     ).scalar_one_or_none()
     if override is None:
         raise not_found("Date override")

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import pytest
+from app.models import Role
+
 from tests.conftest import (
     DEFAULT_PASSWORD,
     TEST_ORIGIN,
@@ -8,8 +11,6 @@ from tests.conftest import (
     make_user,
     post,
 )
-
-from app.models import Role
 
 
 def test_registration_creates_a_customer_and_signs_in(client):
@@ -130,6 +131,49 @@ def test_csrf_accepts_a_valid_pair_and_exempts_safe_methods(client):
     assert response.status_code == 200
 
 
+def test_password_hashes_are_salted_and_verifiable():
+    from app.core.security import hash_password, verify_password
+
+    first = hash_password("correct horse battery")
+    second = hash_password("correct horse battery")
+    assert first != second
+    assert first.startswith("$argon2")
+    assert verify_password("correct horse battery", first)
+    assert not verify_password("wrong password", first)
+
+
+@pytest.mark.parametrize(
+    "role,path,allowed",
+    [
+        (Role.CUSTOMER.value, "/api/dashboard/customer", True),
+        (Role.PROVIDER.value, "/api/dashboard/customer", False),
+        (Role.ADMIN.value, "/api/dashboard/customer", False),
+        (Role.PROVIDER.value, "/api/dashboard/provider", True),
+        (Role.CUSTOMER.value, "/api/dashboard/provider", False),
+        (Role.ADMIN.value, "/api/dashboard/provider", False),
+        (Role.ADMIN.value, "/api/dashboard/admin", True),
+        (Role.CUSTOMER.value, "/api/dashboard/admin", False),
+        (Role.PROVIDER.value, "/api/dashboard/admin", False),
+        (Role.ADMIN.value, "/api/admin/stats", True),
+        (Role.CUSTOMER.value, "/api/admin/stats", False),
+        (Role.PROVIDER.value, "/api/admin/stats", False),
+        (Role.PROVIDER.value, "/api/provider/services", True),
+        (Role.CUSTOMER.value, "/api/provider/services", False),
+        (Role.ADMIN.value, "/api/provider/services", False),
+    ],
+)
+def test_role_endpoint_matrix(client, db, role, path, allowed):
+    email = f"matrix-{role.lower()}-{abs(hash(path))}@example.com"
+    make_user(db, role, email)
+    login(client, email)
+    response = client.get(path)
+    if allowed:
+        assert response.status_code == 200, (role, path, response.text)
+    else:
+        assert response.status_code == 403, (role, path, response.text)
+        assert response.json()["code"] == "FORBIDDEN"
+
+
 def test_role_authorization_is_enforced_server_side(client, db):
     make_user(db, Role.CUSTOMER.value, "notadmin@example.com")
     login(client, "notadmin@example.com")
@@ -142,3 +186,29 @@ def test_unauthenticated_requests_are_rejected(client):
     response = client.get("/api/appointments")
     assert response.status_code == 401
     assert response.json()["code"] == "UNAUTHENTICATED"
+
+
+def test_profile_update_can_clear_phone_and_rejects_a_blank_name(client, db):
+    user = make_user(db, Role.CUSTOMER.value, "editable@example.com", name="Editable Person")
+    user.phone = "555-0100"
+    db.commit()
+
+    login(client, "editable@example.com")
+    cleared = client.patch(
+        "/api/auth/me",
+        json={"phone": None},
+        headers=csrf_headers(client),
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["phone"] is None
+
+    blank = client.patch(
+        "/api/auth/me",
+        json={"full_name": "   "},
+        headers=csrf_headers(client),
+    )
+    assert blank.status_code == 422
+    assert "full_name" in blank.json()["fields"]
+
+    unchanged = client.get("/api/auth/me").json()
+    assert unchanged["full_name"] == "Editable Person"

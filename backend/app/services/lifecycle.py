@@ -3,8 +3,8 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime, time, timedelta
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import Select, false, select
+from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
 from app.core.errors import AppError, conflict, forbidden, not_found
@@ -20,7 +20,7 @@ from app.models import (
 )
 from app.repositories.appointments import acquire_provider_lock, sweep_expired
 from app.services.availability import is_slot_available
-from app.services.serialization import appointment_payload, event_payload
+from app.services.serialization import appointment_payload
 
 
 def _role_of(user: User) -> str:
@@ -136,9 +136,7 @@ def reject(db: Session, user: User, appointment_id: uuid.UUID, reason: str | Non
     return appointment_payload(appointment, events=_events(db, appointment.id))
 
 
-def cancel(
-    db: Session, user: User, appointment_id: uuid.UUID, reason: str | None = None
-) -> dict:
+def cancel(db: Session, user: User, appointment_id: uuid.UUID, reason: str | None = None) -> dict:
     appointment = _guarded(db, user, appointment_id)
     now = utcnow()
     status = appointment.status
@@ -213,8 +211,14 @@ def complete(db: Session, user: User, appointment_id: uuid.UUID) -> dict:
     return appointment_payload(appointment, events=_events(db, appointment.id))
 
 
-def list_appointments(
-    db: Session,
+APPOINTMENT_RELATIONS = (
+    selectinload(Appointment.provider),
+    selectinload(Appointment.customer),
+    selectinload(Appointment.service),
+)
+
+
+def appointment_statement(
     user: User,
     *,
     status: str | None = None,
@@ -223,16 +227,17 @@ def list_appointments(
     view: str | None = None,
     provider_id: uuid.UUID | None = None,
     customer_id: uuid.UUID | None = None,
-) -> list[dict]:
+) -> Select[tuple[Appointment]]:
+    """Build the role-scoped appointment query shared by lists and admin pagination."""
     now = utcnow()
-    stmt = select(Appointment)
+    stmt = select(Appointment).options(*APPOINTMENT_RELATIONS)
     if user.role == Role.CUSTOMER.value:
         stmt = stmt.where(Appointment.customer_id == user.id)
     elif user.role == Role.PROVIDER.value:
         profile = user.provider_profile
-        if profile is None:
-            return []
-        stmt = stmt.where(Appointment.provider_id == profile.id)
+        stmt = (
+            stmt.where(Appointment.provider_id == profile.id) if profile is not None else stmt.where(false())
+        )
     else:
         if provider_id is not None:
             stmt = stmt.where(Appointment.provider_id == provider_id)
@@ -259,12 +264,34 @@ def list_appointments(
         )
     else:
         stmt = stmt.order_by(Appointment.starts_at.desc())
+    return stmt
 
+
+def list_appointments(
+    db: Session,
+    user: User,
+    *,
+    status: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    view: str | None = None,
+    provider_id: uuid.UUID | None = None,
+    customer_id: uuid.UUID | None = None,
+) -> list[dict]:
+    stmt = appointment_statement(
+        user,
+        status=status,
+        date_from=date_from,
+        date_to=date_to,
+        view=view,
+        provider_id=provider_id,
+        customer_id=customer_id,
+    )
     return [appointment_payload(a) for a in db.execute(stmt).scalars()]
 
 
 def customer_dashboard(db: Session, user: User) -> dict:
-    stmt = select(Appointment).where(Appointment.customer_id == user.id)
+    stmt = select(Appointment).options(*APPOINTMENT_RELATIONS).where(Appointment.customer_id == user.id)
     rows = list(db.execute(stmt.order_by(Appointment.starts_at.asc())).scalars())
     now = utcnow()
     active = {s.value for s in ACTIVE_STATUSES}
@@ -272,8 +299,7 @@ def customer_dashboard(db: Session, user: User) -> dict:
     past = [
         a
         for a in rows
-        if a.status != AppointmentStatus.CANCELLED.value
-        and not (a.status in active and a.ends_at >= now)
+        if a.status != AppointmentStatus.CANCELLED.value and not (a.status in active and a.ends_at >= now)
     ]
     cancelled = [a for a in rows if a.status == AppointmentStatus.CANCELLED.value]
     return {
@@ -287,7 +313,9 @@ def provider_conflicts(db: Session, profile: ProviderProfile) -> list[Appointmen
     now = utcnow()
     rows = list(
         db.execute(
-            select(Appointment).where(
+            select(Appointment)
+            .options(*APPOINTMENT_RELATIONS)
+            .where(
                 Appointment.provider_id == profile.id,
                 Appointment.status.in_([s.value for s in ACTIVE_STATUSES]),
                 Appointment.starts_at > now + timedelta(hours=settings.booking_notice_hours),
@@ -324,6 +352,7 @@ def provider_dashboard(db: Session, user: User) -> dict:
     rows = list(
         db.execute(
             select(Appointment)
+            .options(*APPOINTMENT_RELATIONS)
             .where(Appointment.provider_id == profile.id)
             .order_by(Appointment.starts_at.asc())
         ).scalars()
@@ -348,11 +377,7 @@ def provider_dashboard(db: Session, user: User) -> dict:
         and a.status in {AppointmentStatus.PENDING.value, AppointmentStatus.CONFIRMED.value}
         and a not in today
     ]
-    awaiting = [
-        a
-        for a in rows
-        if a.status == AppointmentStatus.CONFIRMED.value and a.ends_at < now
-    ]
+    awaiting = [a for a in rows if a.status == AppointmentStatus.CONFIRMED.value and a.ends_at < now]
     conflicts = provider_conflicts(db, profile)
 
     return {

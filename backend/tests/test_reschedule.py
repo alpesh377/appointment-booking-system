@@ -1,17 +1,14 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timedelta, timezone
-
-from sqlalchemy import func, select, text
-
-from tests.conftest import future_slot, login, make_user, post
+from datetime import UTC, datetime, timedelta
 
 from app.db import SessionLocal
 from app.models import Appointment, AppointmentStatus, Role, User
 from app.services.booking import reschedule
+from sqlalchemy import func, select
 
-UTC = timezone.utc
+from tests.conftest import future_slot, login, make_user, post
 
 
 def _book(client, provider_setup, start):
@@ -104,9 +101,9 @@ def test_reschedule_rejects_a_taken_slot_atomically(client, db, customer, provid
     assert detail["rescheduled_to_id"] is None
     with SessionLocal() as session:
         count = session.execute(
-            select(func.count()).select_from(Appointment).where(
-                Appointment.rescheduled_from_id == original["id"]
-            )
+            select(func.count())
+            .select_from(Appointment)
+            .where(Appointment.rescheduled_from_id == original["id"])
         ).scalar_one()
     assert count == 0
 
@@ -211,6 +208,75 @@ def test_reschedule_requires_ownership(client, db, customer, provider_setup):
     assert response.status_code == 403
 
 
+def test_reschedule_swap_does_not_deadlock(db, customer, provider_setup):
+    from app.core.errors import AppError
+
+    other = make_user(db, Role.CUSTOMER.value, "swap@example.com")
+    slot_a = future_slot(days=3, hour=10)
+    slot_b = future_slot(days=3, hour=11)
+    appointment_a = Appointment(
+        customer_id=customer.id,
+        provider_id=provider_setup["profile"].id,
+        service_id=provider_setup["service"].id,
+        starts_at=slot_a,
+        ends_at=slot_a + timedelta(minutes=60),
+        duration_minutes=60,
+        status=AppointmentStatus.PENDING.value,
+    )
+    appointment_b = Appointment(
+        customer_id=other.id,
+        provider_id=provider_setup["profile"].id,
+        service_id=provider_setup["service"].id,
+        starts_at=slot_b,
+        ends_at=slot_b + timedelta(minutes=60),
+        duration_minutes=60,
+        status=AppointmentStatus.PENDING.value,
+    )
+    db.add_all([appointment_a, appointment_b])
+    db.commit()
+
+    barrier = threading.Barrier(2)
+    results: list[str] = []
+    lock = threading.Lock()
+
+    def worker(appointment_id, user_id, target):
+        session = SessionLocal()
+        try:
+            user = session.get(User, user_id)
+            appointment = session.get(Appointment, appointment_id)
+            barrier.wait(timeout=10)
+            try:
+                reschedule(session, user, appointment, target)
+                outcome = "ok"
+            except AppError as exc:
+                outcome = exc.code
+        finally:
+            session.close()
+        with lock:
+            results.append(outcome)
+
+    threads = [
+        threading.Thread(target=worker, args=(appointment_a.id, customer.id, slot_b)),
+        threading.Thread(target=worker, args=(appointment_b.id, other.id, slot_a)),
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+        assert not thread.is_alive(), "reschedule swap must not deadlock"
+
+    # Serialised by the per-provider lock: each swap finds the other slot occupied
+    # and rolls back, leaving both originals intact.
+    assert results == ["SLOT_UNAVAILABLE", "SLOT_UNAVAILABLE"]
+    with SessionLocal() as session:
+        assert session.get(Appointment, appointment_a.id).status == "PENDING"
+        assert session.get(Appointment, appointment_b.id).status == "PENDING"
+        count = session.execute(
+            select(func.count()).select_from(Appointment).where(Appointment.rescheduled_from_id.is_not(None))
+        ).scalar_one()
+        assert count == 0
+
+
 def test_concurrent_reschedules_produce_one_successor(db, customer, provider_setup):
     from app.core.errors import AppError
 
@@ -256,8 +322,8 @@ def test_concurrent_reschedules_produce_one_successor(db, customer, provider_set
     assert sorted(results) == ["INVALID_TRANSITION", "ok"]
     with SessionLocal() as session:
         count = session.execute(
-            select(func.count()).select_from(Appointment).where(
-                Appointment.rescheduled_from_id == original.id
-            )
+            select(func.count())
+            .select_from(Appointment)
+            .where(Appointment.rescheduled_from_id == original.id)
         ).scalar_one()
     assert count == 1

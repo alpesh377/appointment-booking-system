@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select, text
-from sqlalchemy.exc import IntegrityError
-
-from tests.conftest import future_slot, login, make_user, post, utc_today
-
 from app.db import SessionLocal
 from app.models import Role, User
 from app.services.booking import create_booking
+from sqlalchemy import select, text
+from sqlalchemy.exc import IntegrityError
 
-UTC = timezone.utc
+from tests.conftest import future_slot, login, make_user, patch, post, utc_today
 
 
 def _book(client, provider_setup, starts_at, **extra):
@@ -89,7 +86,9 @@ def test_slot_off_the_grid_is_rejected(client, db, customer, provider_setup):
 
 def test_booking_beyond_the_horizon_is_rejected(client, db, customer, provider_setup):
     login(client, customer.email)
-    start = datetime.combine(utc_today() + timedelta(days=40), datetime.min.time(), tzinfo=UTC).replace(hour=10)
+    start = datetime.combine(utc_today() + timedelta(days=40), datetime.min.time(), tzinfo=UTC).replace(
+        hour=10
+    )
     response = _book(client, provider_setup, start)
     assert response.status_code == 409
     assert response.json()["code"] == "SLOT_UNAVAILABLE"
@@ -140,6 +139,42 @@ def test_expired_pending_releases_its_slot_and_is_recorded(client, db, customer,
     assert detail["events"][-1]["actor_role"] == "SYSTEM"
 
 
+def test_near_term_hold_expires_two_hours_before_the_start(client, db, customer, provider_setup):
+    login(client, customer.email)
+    now = datetime.now(UTC)
+    start = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=6)
+    if start.hour < 9 or start.hour >= 17 or start.date() != now.date():
+        pytest.skip("current clock is outside the demo working window")
+    response = _book(client, provider_setup, start)
+    assert response.status_code == 201, response.text
+    hold = datetime.fromisoformat(response.json()["hold_expires_at"])
+    expected = start - timedelta(hours=2)
+    assert abs((hold - expected).total_seconds()) < 5
+    assert hold < now + timedelta(hours=24)
+
+
+def test_service_duration_edit_does_not_change_an_existing_appointment(client, db, customer, provider_setup):
+    login(client, customer.email)
+    start = future_slot(days=3, hour=10)
+    created = _book(client, provider_setup, start)
+    assert created.status_code == 201, created.text
+    body = created.json()
+
+    post(client, "/api/auth/logout")
+    login(client, provider_setup["user"].email)
+    changed = patch(
+        client,
+        f"/api/services/{provider_setup['service'].id}",
+        json={"duration_minutes": 90},
+    )
+    assert changed.status_code == 200, changed.text
+
+    detail = client.get(f"/api/appointments/{body['id']}").json()
+    assert detail["duration_minutes"] == 60
+    assert detail["ends_at"] == body["ends_at"]
+    assert detail["starts_at"] == body["starts_at"]
+
+
 def test_database_rejects_overlapping_active_appointments(db, customer, provider_setup):
     from app.models import Appointment, AppointmentStatus
 
@@ -175,9 +210,7 @@ def test_database_rejects_overlapping_active_appointments(db, customer, provider
 def test_concurrent_bookings_yield_exactly_one_success(db, provider_setup):
     from app.core.errors import AppError
 
-    customers = [
-        make_user(db, Role.CUSTOMER.value, f"race{i}@example.com") for i in range(2)
-    ]
+    customers = [make_user(db, Role.CUSTOMER.value, f"race{i}@example.com") for i in range(2)]
     emails = [c.email for c in customers]
     start = future_slot(days=4, hour=10)
     barrier = threading.Barrier(2)
@@ -222,3 +255,79 @@ def test_concurrent_bookings_yield_exactly_one_success(db, provider_setup):
             {"pid": provider_setup["profile"].id},
         ).scalar_one()
     assert active == 1
+
+
+def test_expiry_racing_a_booking_releases_the_slot_once(db, customer, provider_setup):
+    from app.core.errors import AppError
+    from app.models import Appointment, AppointmentEvent, AppointmentStatus
+
+    start = future_slot(days=4, hour=11)
+    expired_hold = Appointment(
+        customer_id=customer.id,
+        provider_id=provider_setup["profile"].id,
+        service_id=provider_setup["service"].id,
+        starts_at=start,
+        ends_at=start + timedelta(minutes=60),
+        duration_minutes=60,
+        status=AppointmentStatus.PENDING.value,
+        hold_expires_at=datetime.now(UTC) - timedelta(minutes=1),
+    )
+    db.add(expired_hold)
+    db.commit()
+
+    customers = [make_user(db, Role.CUSTOMER.value, f"expiry-race{i}@example.com") for i in range(2)]
+    barrier = threading.Barrier(2)
+    results: list[str] = []
+    lock = threading.Lock()
+
+    def worker(email: str) -> None:
+        session = SessionLocal()
+        try:
+            user = session.execute(select(User).where(User.email == email)).scalar_one()
+            barrier.wait(timeout=10)
+            try:
+                create_booking(
+                    session,
+                    user,
+                    provider_setup["profile"].id,
+                    provider_setup["service"].id,
+                    start,
+                )
+                outcome = "ok"
+            except AppError as exc:
+                outcome = exc.code
+        finally:
+            session.close()
+        with lock:
+            results.append(outcome)
+
+    threads = [threading.Thread(target=worker, args=(item.email,)) for item in customers]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+        assert not thread.is_alive(), "booking threads must not deadlock"
+
+    assert sorted(results) == ["SLOT_UNAVAILABLE", "ok"]
+
+    with SessionLocal() as session:
+        assert session.get(Appointment, expired_hold.id).status == AppointmentStatus.EXPIRED.value
+        active = session.execute(
+            text(
+                "SELECT count(*) FROM appointments WHERE provider_id = :pid "
+                "AND status IN ('PENDING','CONFIRMED')"
+            ),
+            {"pid": provider_setup["profile"].id},
+        ).scalar_one()
+        assert active == 1
+        events = (
+            session.execute(
+                select(AppointmentEvent).where(
+                    AppointmentEvent.appointment_id == expired_hold.id,
+                    AppointmentEvent.to_status == "EXPIRED",
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert len(events) == 1

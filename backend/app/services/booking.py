@@ -15,9 +15,7 @@ from app.models import (
     Appointment,
     AppointmentEvent,
     AppointmentStatus,
-    ProviderProfile,
     Role,
-    Service,
     User,
 )
 from app.repositories.appointments import (
@@ -31,7 +29,10 @@ from app.services.serialization import appointment_payload
 
 
 def _hold_deadline(start: datetime, now: datetime) -> datetime:
-    return min(now + timedelta(hours=settings.pending_hold_hours), start - timedelta(hours=settings.booking_notice_hours))
+    return min(
+        now + timedelta(hours=settings.pending_hold_hours),
+        start - timedelta(hours=settings.booking_notice_hours),
+    )
 
 
 def _event(
@@ -212,11 +213,3 @@ def reschedule(
         ).scalars()
     )
     return appointment_payload(successor, events=events)
-
-
-def provider_profile_for(db: Session, user: User) -> ProviderProfile | None:
-    return user.provider_profile
-
-
-def service_for_appointment(appointment: Appointment) -> Service:
-    return appointment.service

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from datetime import date as date_type, datetime, time, timezone
+from datetime import UTC, datetime, time
+from datetime import date as date_type
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -19,7 +20,7 @@ def _validate_email(value: str) -> str:
 def _validate_aware(value: datetime) -> datetime:
     if value.tzinfo is None:
         raise ValueError("A timezone is required.")
-    return value.astimezone(timezone.utc)
+    return value.astimezone(UTC)
 
 
 class RegisterRequest(BaseModel):
@@ -147,11 +148,24 @@ class BreaksUpdate(BaseModel):
     breaks: list[BreakInput]
 
 
+class TimeWindow(BaseModel):
+    start_time: time
+    end_time: time
+
+    @field_validator("end_time")
+    @classmethod
+    def order(cls, value: time, info):
+        start = info.data.get("start_time")
+        if start is not None and value <= start:
+            raise ValueError("End time must be after start time.")
+        return value
+
+
 class OverrideInput(BaseModel):
     date: date_type
     is_closed: bool = False
     note: str | None = Field(default=None, max_length=300)
-    windows: list[tuple[time, time]] = Field(default_factory=list)
+    windows: list[TimeWindow] = Field(default_factory=list)
 
 
 class OverridesUpdate(BaseModel):

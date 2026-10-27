@@ -4,14 +4,14 @@ import os
 import subprocess
 import sys
 
+import pytest
+from app.core.config import Settings, settings
+from app.main import app
+from app.seed import main as seed_main
+from pydantic import ValidationError
 from sqlalchemy import text
 
 from tests.conftest import login
-
-from app.core.config import settings
-from app.main import app
-from app.models import Role
-from app.seed import main as seed_main
 
 MIGRATION_URL = "postgresql+psycopg://abs:abs@localhost:5432/appointment_booking_migration_test"
 
@@ -32,9 +32,7 @@ def test_seed_creates_one_admin_and_is_idempotent(db):
     assert seed_main() == 0
     assert seed_main() == 0
     with db.begin():
-        count = db.execute(
-            text("SELECT count(*) FROM users WHERE role = 'ADMIN'")
-        ).scalar_one()
+        count = db.execute(text("SELECT count(*) FROM users WHERE role = 'ADMIN'")).scalar_one()
     assert count == 1
 
 
@@ -79,9 +77,18 @@ def test_migrations_apply_and_reverse_cleanly():
     with engine.connect() as connection:
         tables = {
             row[0]
-            for row in connection.execute(
-                text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'")
-            )
+            for row in connection.execute(text("SELECT tablename FROM pg_tables WHERE schemaname = 'public'"))
         }
     engine.dispose()
     assert {"users", "provider_profiles", "services", "appointments", "appointment_events"} <= tables
+
+
+def test_production_settings_reject_development_defaults():
+    with pytest.raises(ValidationError):
+        Settings(app_env="production", jwt_secret="dev-only-secret", cookie_secure=False)
+
+    with pytest.raises(ValidationError):
+        Settings(app_env="production", jwt_secret="x" * 40, cookie_secure=False)
+
+    safe = Settings(app_env="production", jwt_secret="x" * 40, cookie_secure=True)
+    assert safe.is_production

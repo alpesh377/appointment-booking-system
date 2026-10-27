@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.services.slot_engine import Override, generate_slots
 
-UTC = timezone.utc
 TZ = ZoneInfo("UTC")
 
 

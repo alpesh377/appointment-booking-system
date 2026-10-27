@@ -1,11 +1,9 @@
 from __future__ import annotations
 
 import os
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
-os.environ["DATABASE_URL"] = (
-    "postgresql+psycopg://abs:abs@localhost:5432/appointment_booking_test"
-)
+os.environ["DATABASE_URL"] = "postgresql+psycopg://abs:abs@localhost:5432/appointment_booking_test"
 os.environ["APP_ORIGIN"] = "http://testserver"
 os.environ["JWT_SECRET"] = "test-secret-value-that-is-long-enough-for-hs256"
 os.environ["COOKIE_SECURE"] = "false"
@@ -141,12 +139,12 @@ def login(client: TestClient, email: str, password: str = DEFAULT_PASSWORD):
 
 
 def future_slot(days: int = 3, hour: int = 10, minute: int = 0) -> datetime:
-    target = datetime.now(timezone.utc).date() + timedelta(days=days)
-    return datetime.combine(target, time(hour, minute), tzinfo=timezone.utc)
+    target = datetime.now(UTC).date() + timedelta(days=days)
+    return datetime.combine(target, time(hour, minute), tzinfo=UTC)
 
 
 def utc_today() -> date:
-    return datetime.now(timezone.utc).date()
+    return datetime.now(UTC).date()
 
 
 @pytest.fixture

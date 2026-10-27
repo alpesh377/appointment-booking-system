@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-
-from tests.conftest import future_slot, login, make_user, patch, post, put
+from datetime import timedelta
 
 from app.models import Appointment, Role
 
-UTC = timezone.utc
+from tests.conftest import future_slot, login, make_user, patch, post, put
 
 
 def _admin(db, email="admin@example.com"):
@@ -44,7 +42,7 @@ def test_stats_report_totals_and_status_distribution(client, db, customer, provi
 
 def test_deactivating_a_customer_blocks_sign_in_and_preserves_history(client, db, customer, provider_setup):
     _admin(db)
-    appointment = _insert(db, customer, provider_setup, future_slot(days=2, hour=10), "CONFIRMED")
+    _insert(db, customer, provider_setup, future_slot(days=2, hour=10), "CONFIRMED")
     login(client, "admin@example.com")
     assert post(client, f"/api/admin/users/{customer.id}/deactivate").status_code == 200
     assert len(client.get("/api/admin/appointments").json()["items"]) == 1
@@ -77,26 +75,35 @@ def test_admin_cannot_act_as_customer_or_provider(client, db, customer, provider
     assert post(client, f"/api/appointments/{appointment.id}/confirm").status_code == 403
     assert post(client, f"/api/appointments/{appointment.id}/reject").status_code == 403
     assert post(client, f"/api/appointments/{appointment.id}/complete").status_code == 403
-    assert post(
-        client,
-        f"/api/appointments/{appointment.id}/reschedule",
-        json={"starts_at": future_slot(days=3, hour=10).isoformat()},
-    ).status_code == 403
+    assert (
+        post(
+            client,
+            f"/api/appointments/{appointment.id}/reschedule",
+            json={"starts_at": future_slot(days=3, hour=10).isoformat()},
+        ).status_code
+        == 403
+    )
 
 
 def test_admin_cannot_edit_services_or_availability(client, db, provider_setup):
     _admin(db)
     login(client, "admin@example.com")
-    assert post(
-        client,
-        f"/api/providers/{provider_setup['profile'].id}/services",
-        json={"name": "X", "category": "Y", "duration_minutes": 30},
-    ).status_code == 403
-    assert put(
-        client,
-        f"/api/providers/{provider_setup['profile'].id}/availability/windows",
-        json={"windows": []},
-    ).status_code == 403
+    assert (
+        post(
+            client,
+            f"/api/providers/{provider_setup['profile'].id}/services",
+            json={"name": "X", "category": "Y", "duration_minutes": 30},
+        ).status_code
+        == 403
+    )
+    assert (
+        put(
+            client,
+            f"/api/providers/{provider_setup['profile'].id}/availability/windows",
+            json={"windows": []},
+        ).status_code
+        == 403
+    )
 
 
 def test_terminal_appointments_cannot_be_cancelled_by_admin(client, db, customer, provider_setup):
@@ -153,3 +160,10 @@ def test_admin_appointment_filters_and_pagination(client, db, customer, provider
     ).json()
     assert len(paged["items"]) == 1
     assert paged["total"] == 2
+
+
+def test_unknown_status_filter_is_rejected_rather_than_ignored(client, db):
+    _admin(db)
+    login(client, "admin@example.com")
+    assert client.get("/api/admin/appointments", params={"status": "NOT_A_STATUS"}).status_code == 422
+    assert client.get("/api/appointments", params={"view": "sideways"}).status_code == 422

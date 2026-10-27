@@ -56,16 +56,12 @@ def load_slots(
     tz = zone(provider.timezone)
     now = now or utcnow()
 
-    rules = db.execute(
-        select(AvailabilityRule).where(AvailabilityRule.provider_id == provider.id)
-    ).scalars()
+    rules = db.execute(select(AvailabilityRule).where(AvailabilityRule.provider_id == provider.id)).scalars()
     weekly_windows: dict[int, list[tuple]] = defaultdict(list)
     for rule in rules:
         weekly_windows[rule.weekday].append((rule.start_time, rule.end_time))
 
-    breaks = db.execute(
-        select(ScheduleBreak).where(ScheduleBreak.provider_id == provider.id)
-    ).scalars()
+    breaks = db.execute(select(ScheduleBreak).where(ScheduleBreak.provider_id == provider.id)).scalars()
     weekly_breaks: list[tuple[int, object, object]] = []
     date_breaks: list[tuple[date, object, object]] = []
     for item in breaks:

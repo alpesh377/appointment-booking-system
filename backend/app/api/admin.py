@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import require_admin
 from app.db import get_db
-from app.models import User
+from app.models import AppointmentStatus, User
 from app.schemas import ReasonRequest
 from app.services import admin as admin_service
 from app.services import lifecycle
@@ -55,7 +55,7 @@ def reactivate_user(
 
 @router.get("/appointments", summary="All appointments with filters")
 def appointments(
-    status: str | None = Query(default=None),
+    status: AppointmentStatus | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
     provider_id: uuid.UUID | None = Query(default=None),
@@ -68,7 +68,7 @@ def appointments(
     return admin_service.appointments_page(
         db,
         actor,
-        status=status,
+        status=status.value if status else None,
         date_from=date_from,
         date_to=date_to,
         provider_id=provider_id,

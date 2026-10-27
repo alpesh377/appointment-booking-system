@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
-
-UTC = timezone.utc
 
 
 def utcnow() -> datetime:
@@ -11,10 +9,7 @@ def utcnow() -> datetime:
 
 
 def parse_instant(value: str | datetime) -> datetime:
-    if isinstance(value, datetime):
-        dt = value
-    else:
-        dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    dt = value if isinstance(value, datetime) else datetime.fromisoformat(value.replace("Z", "+00:00"))
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC)

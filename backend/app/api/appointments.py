@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
@@ -9,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_current_user, require_customer
 from app.core.errors import AppError
 from app.db import get_db
-from app.models import Role, User
+from app.models import AppointmentStatus, User
 from app.schemas import BookingCreate, ReasonRequest, RescheduleRequest
 from app.services import booking as booking_service
 from app.services import lifecycle
@@ -21,7 +22,9 @@ def _uuid(value: str, field: str) -> uuid.UUID:
     try:
         return uuid.UUID(value)
     except (ValueError, TypeError):
-        raise AppError(422, "VALIDATION_ERROR", "Invalid identifier.", {field: "Invalid identifier."}) from None
+        raise AppError(
+            422, "VALIDATION_ERROR", "Invalid identifier.", {field: "Invalid identifier."}
+        ) from None
 
 
 @router.post("", status_code=201, summary="Book an appointment")
@@ -42,10 +45,10 @@ def create_appointment(
 
 @router.get("", summary="List appointments for the current role")
 def list_appointments(
-    status: str | None = Query(default=None),
+    status: AppointmentStatus | None = Query(default=None),
     date_from: date | None = Query(default=None),
     date_to: date | None = Query(default=None),
-    view: str | None = Query(default=None),
+    view: Literal["upcoming", "past", "cancelled"] | None = Query(default=None),
     provider_id: uuid.UUID | None = Query(default=None),
     customer_id: uuid.UUID | None = Query(default=None),
     user: User = Depends(get_current_user),
@@ -54,7 +57,7 @@ def list_appointments(
     return lifecycle.list_appointments(
         db,
         user,
-        status=status,
+        status=status.value if status else None,
         date_from=date_from,
         date_to=date_to,
         view=view,

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from tests.conftest import DEFAULT_PASSWORD, login, make_user, patch, post
-
 from app.models import Role
+
+from tests.conftest import DEFAULT_PASSWORD, login, make_user, patch, post
 
 
 def _admin(db):
@@ -54,7 +54,6 @@ def test_listing_shows_active_providers_only(client, db):
 
 
 def test_search_matches_name_and_service_category(client, db, provider_setup):
-    provider = provider_setup["profile"]
     assert len(client.get("/api/providers", params={"q": "provider"}).json()) == 1
     assert len(client.get("/api/providers", params={"q": "general"}).json()) == 1
     assert client.get("/api/providers", params={"q": "zzz"}).json() == []
@@ -110,6 +109,22 @@ def test_provider_updates_own_profile(client, db, provider_setup):
     assert response.status_code == 200
     assert response.json()["display_name"] == "Renamed"
     assert response.json()["timezone"] == "Europe/Berlin"
+
+
+def test_admin_updates_a_provider_profile(client, db, provider_setup):
+    _admin(db)
+    login(client, "admin@example.com")
+    response = patch(
+        client,
+        f"/api/providers/{provider_setup['profile'].id}",
+        json={"display_name": "Admin Renamed", "category": "Updated"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["display_name"] == "Admin Renamed"
+    assert response.json()["category"] == "Updated"
+    assert (
+        client.get(f"/api/providers/{provider_setup['profile'].id}").json()["display_name"] == "Admin Renamed"
+    )
 
 
 def test_invalid_timezone_is_rejected(client, db, provider_setup):

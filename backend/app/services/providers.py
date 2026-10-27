@@ -4,10 +4,12 @@ import uuid
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.errors import AppError, forbidden, not_found
 from app.core.security import MIN_PASSWORD_LENGTH, hash_password
+from app.db import violated_constraint
 from app.models import ProviderProfile, Role, Service, User
 from app.services.availability import get_provider
 from app.services.serialization import provider_payload, provider_summary
@@ -17,7 +19,9 @@ def _validate_timezone(name: str) -> str:
     try:
         ZoneInfo(name)
     except (ZoneInfoNotFoundError, ValueError):
-        raise AppError(422, "VALIDATION_ERROR", "Unknown timezone.", {"timezone": "Unknown timezone."}) from None
+        raise AppError(
+            422, "VALIDATION_ERROR", "Unknown timezone.", {"timezone": "Unknown timezone."}
+        ) from None
     return name
 
 
@@ -84,7 +88,14 @@ def create_provider(db: Session, payload: dict) -> dict:
         is_active=True,
     )
     db.add(provider)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        # The unique email index rejected a concurrent creation with the same address.
+        if violated_constraint(exc) != "users_email_key":
+            raise
+        raise AppError(409, "EMAIL_TAKEN", "An account with that email already exists.") from None
     db.refresh(provider)
     provider.user = user
     provider.services = []
@@ -102,16 +113,6 @@ def _apply_profile(payload: dict, provider: ProviderProfile) -> None:
         provider.timezone = _validate_timezone(payload["timezone"])
     if payload.get("phone") is not None and provider.user is not None:
         provider.user.phone = payload["phone"]
-
-
-def update_own_profile(db: Session, user: User, payload: dict) -> dict:
-    if "full_name" in payload and payload["full_name"] is not None:
-        user.full_name = payload["full_name"].strip()
-    if "phone" in payload:
-        user.phone = payload["phone"]
-    db.commit()
-    db.refresh(user)
-    return {"user": user}
 
 
 def update_provider(db: Session, user: User, provider_id: uuid.UUID, payload: dict) -> dict:
@@ -153,7 +154,14 @@ def create_service(db: Session, user: User, provider_id: uuid.UUID, payload: dic
     db.add(service)
     db.commit()
     db.refresh(service)
-    return {"id": str(service.id), "name": service.name, "category": service.category, "duration_minutes": service.duration_minutes, "is_active": service.is_active, "provider_id": str(service.provider_id)}
+    return {
+        "id": str(service.id),
+        "name": service.name,
+        "category": service.category,
+        "duration_minutes": service.duration_minutes,
+        "is_active": service.is_active,
+        "provider_id": str(service.provider_id),
+    }
 
 
 def update_service(db: Session, user: User, service_id: uuid.UUID, payload: dict) -> dict:
@@ -172,7 +180,14 @@ def update_service(db: Session, user: User, service_id: uuid.UUID, payload: dict
         service.is_active = payload["is_active"]
     db.commit()
     db.refresh(service)
-    return {"id": str(service.id), "name": service.name, "category": service.category, "duration_minutes": service.duration_minutes, "is_active": service.is_active, "provider_id": str(service.provider_id)}
+    return {
+        "id": str(service.id),
+        "name": service.name,
+        "category": service.category,
+        "duration_minutes": service.duration_minutes,
+        "is_active": service.is_active,
+        "provider_id": str(service.provider_id),
+    }
 
 
 def deactivate_service(db: Session, user: User, service_id: uuid.UUID) -> dict:

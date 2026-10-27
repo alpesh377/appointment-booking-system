@@ -7,10 +7,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_admin, require_provider
 from app.db import get_db
-from app.models import Role, Service, User
+from app.models import User
 from app.schemas import ProviderCreate, ProviderUpdate, ServiceCreate, ServiceUpdate
 from app.services import providers as provider_service
-from app.services.serialization import provider_payload, service_payload
+from app.services.serialization import service_payload
 
 router = APIRouter(tags=["providers"])
 
@@ -75,8 +75,7 @@ def own_services(
 ) -> list[dict]:
     profile = user.provider_profile
     return [
-        service_payload(service)
-        for service in sorted(profile.services, key=lambda item: item.name.lower())
+        service_payload(service) for service in sorted(profile.services, key=lambda item: item.name.lower())
     ]
 
 

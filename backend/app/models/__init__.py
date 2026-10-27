@@ -54,13 +54,9 @@ ACTIVE_STATUSES = {AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED}
 
 class User(Base):
     __tablename__ = "users"
-    __table_args__ = (
-        CheckConstraint("role IN ('ADMIN','PROVIDER','CUSTOMER')", name="ck_users_role"),
-    )
+    __table_args__ = (CheckConstraint("role IN ('ADMIN','PROVIDER','CUSTOMER')", name="ck_users_role"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(CITEXT, unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -74,17 +70,13 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
 
-    provider_profile: Mapped[ProviderProfile | None] = relationship(
-        back_populates="user", uselist=False
-    )
+    provider_profile: Mapped[ProviderProfile | None] = relationship(back_populates="user", uselist=False)
 
 
 class ProviderProfile(Base):
     __tablename__ = "provider_profiles"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), unique=True, nullable=False
     )
@@ -113,9 +105,7 @@ class Service(Base):
         ),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     provider_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("provider_profiles.id", ondelete="RESTRICT"),
@@ -143,9 +133,7 @@ class AvailabilityRule(Base):
         CheckConstraint("start_time < end_time", name="ck_availability_order"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     provider_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("provider_profiles.id", ondelete="CASCADE"),
@@ -168,9 +156,7 @@ class ScheduleBreak(Base):
         CheckConstraint("start_time < end_time", name="ck_breaks_order"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     provider_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("provider_profiles.id", ondelete="CASCADE"),
@@ -187,9 +173,7 @@ class DateOverride(Base):
     __tablename__ = "date_overrides"
     __table_args__ = (UniqueConstraint("provider_id", "date", name="uq_override_provider_date"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     provider_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("provider_profiles.id", ondelete="CASCADE"),
@@ -205,9 +189,7 @@ class DateOverrideWindow(Base):
     __tablename__ = "date_override_windows"
     __table_args__ = (CheckConstraint("start_time < end_time", name="ck_override_window_order"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     override_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("date_overrides.id", ondelete="CASCADE"),
@@ -232,9 +214,7 @@ class Appointment(Base):
         Index("ix_appointments_status", "status"),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     customer_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
@@ -283,9 +263,7 @@ class AppointmentEvent(Base):
     __tablename__ = "appointment_events"
     __table_args__ = (Index("ix_events_appointment", "appointment_id", "created_at"),)
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     appointment_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("appointments.id", ondelete="CASCADE"), nullable=False
     )

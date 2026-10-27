@@ -27,9 +27,7 @@ def service_payload(service: Service) -> dict:
 
 
 def provider_summary(provider: ProviderProfile) -> dict:
-    active_durations = sorted(
-        {s.duration_minutes for s in provider.services if s.is_active}
-    )
+    active_durations = sorted({s.duration_minutes for s in provider.services if s.is_active})
     return {
         "id": str(provider.id),
         "display_name": provider.display_name,
@@ -99,9 +97,7 @@ def appointment_payload(
         "rescheduled_from_id": (
             str(appointment.rescheduled_from_id) if appointment.rescheduled_from_id else None
         ),
-        "rescheduled_to_id": (
-            str(appointment.rescheduled_to_id) if appointment.rescheduled_to_id else None
-        ),
+        "rescheduled_to_id": (str(appointment.rescheduled_to_id) if appointment.rescheduled_to_id else None),
         "cancelled_by_role": appointment.cancelled_by_role,
         "cancellation_reason": appointment.cancellation_reason,
         "created_at": iso(appointment.created_at),

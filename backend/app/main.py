@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -8,6 +10,10 @@ from app.api import admin, appointments, auth, availability, dashboards, provide
 from app.core.config import settings
 from app.core.csrf import CSRFMiddleware
 from app.core.errors import AppError, app_error_handler, error_payload
+from app.core.logging import configure_logging
+
+configure_logging()
+logger = logging.getLogger("app.api")
 
 app = FastAPI(
     title="Appointment Booking System API",
@@ -33,6 +39,15 @@ async def validation_handler(_: Request, exc: RequestValidationError) -> JSONRes
     return JSONResponse(
         status_code=422,
         content=error_payload("VALIDATION_ERROR", "The submitted data is invalid.", fields),
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path, exc_info=exc)
+    return JSONResponse(
+        status_code=500,
+        content=error_payload("INTERNAL_ERROR", "An unexpected error occurred."),
     )
 
 

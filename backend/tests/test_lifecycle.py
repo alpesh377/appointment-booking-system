@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from datetime import datetime, time, timedelta, timezone
+from datetime import UTC, datetime, time, timedelta
+
+import pytest
+from app.models import Appointment, Role
 
 from tests.conftest import future_slot, login, make_user, post
-
-from app.models import Appointment, AppointmentStatus, Role
-
-UTC = timezone.utc
 
 
 def _book(client, provider_setup, start):
@@ -37,6 +36,45 @@ def _insert(db, customer, provider_setup, starts_at, status, duration=60):
     db.commit()
     db.refresh(appointment)
     return appointment
+
+
+STATUSES = [
+    "PENDING",
+    "CONFIRMED",
+    "REJECTED",
+    "CANCELLED",
+    "COMPLETED",
+    "EXPIRED",
+    "RESCHEDULED",
+]
+
+
+@pytest.mark.parametrize("status", STATUSES)
+@pytest.mark.parametrize("action", ["confirm", "reject", "cancel", "complete"])
+def test_provider_transition_matrix(client, db, customer, provider_setup, status, action):
+    appointment = _insert(db, customer, provider_setup, future_slot(days=3, hour=10), status)
+    login(client, provider_setup["user"].email)
+    response = post(client, f"/api/appointments/{appointment.id}/{action}")
+    legal = (action in {"confirm", "reject"} and status == "PENDING") or (
+        action == "cancel" and status == "CONFIRMED"
+    )
+    # Completion is never legal before the end time, whatever the status.
+    if legal:
+        assert response.status_code == 200, (status, action, response.text)
+    else:
+        assert response.status_code == 409, (status, action, response.text)
+        assert response.json()["code"] in {"INVALID_TRANSITION", "USE_REJECT"}
+
+
+@pytest.mark.parametrize("status", STATUSES)
+def test_customer_cancel_matrix(client, db, customer, provider_setup, status):
+    appointment = _insert(db, customer, provider_setup, future_slot(days=3, hour=10), status)
+    login(client, customer.email)
+    response = post(client, f"/api/appointments/{appointment.id}/cancel")
+    if status in {"PENDING", "CONFIRMED"}:
+        assert response.status_code == 200, (status, response.text)
+    else:
+        assert response.status_code == 409, (status, response.text)
 
 
 def test_provider_confirms_a_pending_request(client, db, customer, provider_setup):
@@ -101,9 +139,7 @@ def test_customer_cancels_before_the_cutoff(client, db, customer, provider_setup
 
 
 def test_customer_cannot_cancel_inside_the_cutoff(client, db, customer, provider_setup):
-    appointment = _insert(
-        db, customer, provider_setup, datetime.now(UTC) + timedelta(hours=1), "CONFIRMED"
-    )
+    appointment = _insert(db, customer, provider_setup, datetime.now(UTC) + timedelta(hours=1), "CONFIRMED")
     login(client, customer.email)
     response = post(client, f"/api/appointments/{appointment.id}/cancel")
     assert response.status_code == 403
@@ -146,27 +182,21 @@ def test_completion_requires_the_end_time_to_have_passed(client, db, customer, p
     early = post(client, f"/api/appointments/{created['id']}/complete")
     assert early.status_code == 409
 
-    past = _insert(
-        db, customer, provider_setup, datetime.now(UTC) - timedelta(hours=2), "CONFIRMED"
-    )
+    past = _insert(db, customer, provider_setup, datetime.now(UTC) - timedelta(hours=2), "CONFIRMED")
     done = post(client, f"/api/appointments/{past.id}/complete")
     assert done.status_code == 200
     assert done.json()["status"] == "COMPLETED"
 
 
 def test_a_past_confirmed_appointment_is_not_completed_automatically(client, db, customer, provider_setup):
-    appointment = _insert(
-        db, customer, provider_setup, datetime.now(UTC) - timedelta(hours=2), "CONFIRMED"
-    )
+    appointment = _insert(db, customer, provider_setup, datetime.now(UTC) - timedelta(hours=2), "CONFIRMED")
     login(client, provider_setup["user"].email)
     response = client.get(f"/api/appointments/{appointment.id}")
     assert response.json()["status"] == "CONFIRMED"
 
 
 def test_terminal_states_reject_further_transitions(client, db, customer, provider_setup):
-    appointment = _insert(
-        db, customer, provider_setup, future_slot(days=3, hour=10), "CANCELLED"
-    )
+    appointment = _insert(db, customer, provider_setup, future_slot(days=3, hour=10), "CANCELLED")
     login(client, provider_setup["user"].email)
     assert post(client, f"/api/appointments/{appointment.id}/confirm").status_code == 409
     assert post(client, f"/api/appointments/{appointment.id}/reject").status_code == 409
@@ -174,9 +204,7 @@ def test_terminal_states_reject_further_transitions(client, db, customer, provid
 
 
 def test_another_customer_cannot_see_or_cancel(client, db, customer, provider_setup):
-    appointment = _insert(
-        db, customer, provider_setup, future_slot(days=3, hour=10), "PENDING"
-    )
+    appointment = _insert(db, customer, provider_setup, future_slot(days=3, hour=10), "PENDING")
     other = make_user(db, Role.CUSTOMER.value, "other@example.com")
     login(client, other.email)
     assert client.get(f"/api/appointments/{appointment.id}").status_code == 403
@@ -195,12 +223,8 @@ def test_another_provider_cannot_act(client, db, customer, provider_setup):
 
 def test_customer_dashboard_groups_upcoming_past_and_cancelled(client, db, customer, provider_setup):
     upcoming = _insert(db, customer, provider_setup, future_slot(days=2, hour=10), "CONFIRMED")
-    past = _insert(
-        db, customer, provider_setup, datetime.now(UTC) - timedelta(days=2), "COMPLETED"
-    )
-    cancelled = _insert(
-        db, customer, provider_setup, future_slot(days=3, hour=11), "CANCELLED"
-    )
+    past = _insert(db, customer, provider_setup, datetime.now(UTC) - timedelta(days=2), "COMPLETED")
+    cancelled = _insert(db, customer, provider_setup, future_slot(days=3, hour=11), "CANCELLED")
     login(client, customer.email)
     body = client.get("/api/dashboard/customer").json()
     assert [a["id"] for a in body["upcoming"]] == [str(upcoming.id)]
@@ -223,9 +247,7 @@ def test_provider_dashboard_groups(client, db, customer, provider_setup):
     today_start = datetime.combine(now.date(), time(9), tzinfo=UTC)
     today = _insert(db, customer, provider_setup, today_start, "CONFIRMED")
     pending = _insert(db, customer, provider_setup, future_slot(days=2, hour=10), "PENDING")
-    awaiting = _insert(
-        db, customer, provider_setup, now - timedelta(hours=3), "CONFIRMED"
-    )
+    awaiting = _insert(db, customer, provider_setup, now - timedelta(hours=3), "CONFIRMED")
     login(client, provider_setup["user"].email)
     body = client.get("/api/dashboard/provider").json()
     today_ids = [a["id"] for a in body["today"]]

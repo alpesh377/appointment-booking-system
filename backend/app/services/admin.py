@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.core.errors import AppError, not_found
 from app.models import Appointment, ProviderProfile, Role, User
 from app.services import lifecycle
-from app.services.serialization import user_payload
+from app.services.serialization import appointment_payload, provider_payload, user_payload
 
 
 def stats(db: Session) -> dict:
@@ -18,10 +18,8 @@ def stats(db: Session) -> dict:
     ).scalar_one()
     providers = db.execute(select(func.count()).select_from(ProviderProfile)).scalar_one()
     appointments = db.execute(select(func.count()).select_from(Appointment)).scalar_one()
-    rows = db.execute(
-        select(Appointment.status, func.count()).group_by(Appointment.status)
-    ).all()
-    by_status = {status: count for status, count in rows}
+    rows = db.execute(select(Appointment.status, func.count()).group_by(Appointment.status)).all()
+    by_status = dict(rows)
     return {
         "customers": customers,
         "providers": providers,
@@ -39,8 +37,6 @@ def list_customers(db: Session, query: str | None = None) -> list[dict]:
 
 
 def list_all_providers(db: Session) -> list[dict]:
-    from app.services.serialization import provider_payload
-
     rows = db.execute(
         select(ProviderProfile)
         .options(selectinload(ProviderProfile.services), selectinload(ProviderProfile.user))
@@ -96,8 +92,7 @@ def appointments_page(
     page: int = 1,
     page_size: int = 20,
 ) -> dict:
-    items = lifecycle.list_appointments(
-        db,
+    stmt = lifecycle.appointment_statement(
         actor,
         status=status,
         date_from=date_from,
@@ -105,10 +100,10 @@ def appointments_page(
         provider_id=provider_id,
         customer_id=customer_id,
     )
-    total = len(items)
-    start = (page - 1) * page_size
+    total = db.execute(select(func.count()).select_from(stmt.order_by(None).subquery())).scalar_one()
+    rows = db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars()
     return {
-        "items": items[start : start + page_size],
+        "items": [appointment_payload(row) for row in rows],
         "total": total,
         "page": page,
         "page_size": page_size,
