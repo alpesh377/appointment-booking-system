@@ -44,6 +44,7 @@ The code also has to be readable by a reviewer. The failure mode for take-home p
 | Rendering | Pure SPA; **App Router with Server Components for the shell** | App Router |
 | Styling | Hand-written CSS; CSS modules; **Tailwind + shadcn/ui** | Tailwind + shadcn/ui |
 | Client data | Manual `fetch` + `useEffect`; **TanStack Query** | TanStack Query |
+| Form state | Manual `useState` per field; **React Hook Form + Zod** | React Hook Form + Zod |
 | Backend structure | Routers query the ORM directly; **routers → services → repositories** | Layered |
 | ORM | Raw SQL; SQLAlchemy 2.0 | SQLAlchemy 2.0 |
 | Migrations | Hand-maintained SQL; **Alembic** | Alembic |
@@ -58,7 +59,12 @@ The code also has to be readable by a reviewer. The failure mode for take-home p
 - **Next.js App Router + TypeScript.**
 - **Server Components** render the application shell and layout; **Client Components** own forms, filters and slot pickers.
 - **TanStack Query** for client-side fetching and mutations, giving uniform loading, empty and error states.
-- **Tailwind CSS + shadcn/ui** for responsive layout and accessible primitives.
+- **React Hook Form + Zod** for form state and validation. Schemas mirror the FastAPI request models,
+  and server-side field errors are mapped back onto the offending fields.
+- **Tailwind CSS v4 + shadcn/ui** for responsive layout and accessible primitives. Theme tokens
+  live in `globals.css` under `@theme inline`; there is no JavaScript Tailwind config.
+- **Motion** for short, reduced-motion-aware transitions only; no global client store is used because
+  authentication state lives in a React context and server state belongs to TanStack Query.
 - One HTTP wrapper attaches the CSRF header and maps `401`/`403`/`409`/`422` to consistent UI messages.
 - Every data view implements loading, empty and error states explicitly (R-UI-2, R-UI-4, R-UI-5).
 
