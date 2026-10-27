@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { useAuth } from "@/components/providers";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const CUSTOMER_LINKS = [
@@ -18,7 +18,11 @@ const PROVIDER_LINKS = [
   { href: "/provider/availability", label: "Availability" },
 ];
 
-const ADMIN_LINKS = [{ href: "/admin", label: "Administration" }];
+const ADMIN_LINKS = [
+  { href: "/admin", label: "Overview" },
+  { href: "/admin/users", label: "Users" },
+  { href: "/admin/appointments", label: "Appointments" },
+];
 
 export function SiteHeader() {
   const { user, loading, signOut } = useAuth();
@@ -33,7 +37,7 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-30 border-b bg-background/95 backdrop-blur">
-      <div className="container flex h-16 items-center justify-between gap-4">
+      <div className="page-container flex h-16 items-center justify-between gap-4">
         <Link href="/" className="text-lg font-semibold tracking-tight">
           Appointly
         </Link>
@@ -65,12 +69,12 @@ export function SiteHeader() {
             </>
           ) : (
             <>
-              <Button asChild={false} variant="ghost" size="sm">
-                <Link href="/login">Sign in</Link>
-              </Button>
-              <Button variant="default" size="sm">
-                <Link href="/register">Register</Link>
-              </Button>
+              <Link href="/login" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+                Sign in
+              </Link>
+              <Link href="/register" className={buttonVariants({ variant: "default", size: "sm" })}>
+                Register
+              </Link>
             </>
           )}
         </div>

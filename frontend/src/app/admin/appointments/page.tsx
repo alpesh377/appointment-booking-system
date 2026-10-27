@@ -1,0 +1,256 @@
+"use client";
+
+import * as React from "react";
+import Link from "next/link";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+import { ErrorState, Loading, NoItems } from "@/components/page-state";
+import { RequireRole } from "@/components/require-role";
+import { Alert } from "@/components/ui/alert";
+import { StatusBadge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input, Select } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { api, errorMessage } from "@/lib/api";
+import { formatInstant } from "@/lib/format";
+import type { AdminAppointments, Appointment, Provider, User } from "@/lib/types";
+
+const STATUSES = [
+  "PENDING",
+  "CONFIRMED",
+  "REJECTED",
+  "CANCELLED",
+  "COMPLETED",
+  "EXPIRED",
+  "RESCHEDULED",
+] as const;
+
+const PAGE_SIZE = 20;
+
+function AdminAppointments() {
+  const queryClient = useQueryClient();
+  const [status, setStatus] = React.useState("");
+  const [providerId, setProviderId] = React.useState("");
+  const [customerId, setCustomerId] = React.useState("");
+  const [dateFrom, setDateFrom] = React.useState("");
+  const [dateTo, setDateTo] = React.useState("");
+  const [page, setPage] = React.useState(1);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const providers = useQuery({
+    queryKey: ["admin", "providers"],
+    queryFn: () => api.get<Provider[]>("/api/admin/providers"),
+  });
+  const customers = useQuery({
+    queryKey: ["admin", "customers", ""],
+    queryFn: () => api.get<User[]>("/api/admin/customers"),
+  });
+
+  const params = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
+  if (status) params.set("status", status);
+  if (providerId) params.set("provider_id", providerId);
+  if (customerId) params.set("customer_id", customerId);
+  if (dateFrom) params.set("date_from", dateFrom);
+  if (dateTo) params.set("date_to", dateTo);
+
+  const appointments = useQuery({
+    queryKey: ["admin", "appointments", status, providerId, customerId, dateFrom, dateTo, page],
+    queryFn: () => api.get<AdminAppointments>(`/api/admin/appointments?${params.toString()}`),
+  });
+
+  const cancel = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      api.post<Appointment>(`/api/admin/appointments/${id}/cancel`, { reason: reason || null }),
+    onSuccess: () => {
+      setError(null);
+      void queryClient.invalidateQueries();
+    },
+    onError: (caught) => setError(errorMessage(caught)),
+  });
+
+  const totalPages = appointments.data
+    ? Math.max(1, Math.ceil(appointments.data.total / PAGE_SIZE))
+    : 1;
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">All appointments</h1>
+        <p className="text-muted-foreground">
+          Every appointment, including those belonging to deactivated accounts. Administrators may
+          cancel only; confirmation, rejection, completion and rescheduling stay with the provider or
+          customer.
+        </p>
+      </div>
+
+      {error ? <Alert variant="error" title="Action failed">{error}</Alert> : null}
+
+      <Card>
+        <CardContent className="grid gap-3 pt-6 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="space-y-1">
+            <Label htmlFor="admin-status">Status</Label>
+            <Select
+              id="admin-status"
+              value={status}
+              onChange={(event) => {
+                setStatus(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Any status</option>
+              {STATUSES.map((item) => (
+                <option key={item} value={item}>
+                  {item.charAt(0) + item.slice(1).toLowerCase()}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="admin-provider">Provider</Label>
+            <Select
+              id="admin-provider"
+              value={providerId}
+              onChange={(event) => {
+                setProviderId(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Any provider</option>
+              {providers.data?.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.display_name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="admin-customer">Customer</Label>
+            <Select
+              id="admin-customer"
+              value={customerId}
+              onChange={(event) => {
+                setCustomerId(event.target.value);
+                setPage(1);
+              }}
+            >
+              <option value="">Any customer</option>
+              {customers.data?.map((customer) => (
+                <option key={customer.id} value={customer.id}>
+                  {customer.full_name}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="admin-from">From</Label>
+            <Input
+              id="admin-from"
+              type="date"
+              value={dateFrom}
+              onChange={(event) => {
+                setDateFrom(event.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="admin-to">To</Label>
+            <Input
+              id="admin-to"
+              type="date"
+              value={dateTo}
+              onChange={(event) => {
+                setDateTo(event.target.value);
+                setPage(1);
+              }}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      {appointments.isPending ? <Loading label="Loading appointments…" /> : null}
+      {appointments.isError ? (
+        <ErrorState
+          message={errorMessage(appointments.error)}
+          retry={() => void appointments.refetch()}
+        />
+      ) : null}
+      {appointments.data && appointments.data.items.length === 0 ? (
+        <NoItems title="No appointments match these filters" />
+      ) : null}
+
+      {appointments.data && appointments.data.items.length > 0 ? (
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            {appointments.data.total} appointment(s) · page {appointments.data.page} of {totalPages}
+          </p>
+          <ul className="divide-y rounded-lg border">
+            {appointments.data.items.map((appointment) => {
+              const cancellable =
+                appointment.status === "PENDING" || appointment.status === "CONFIRMED";
+              return (
+                <li key={appointment.id} className="flex flex-wrap items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <StatusBadge status={appointment.status} />
+                      <Link
+                        href={`/appointments/${appointment.id}`}
+                        className="truncate font-medium underline-offset-4 hover:underline"
+                      >
+                        {appointment.customer.full_name} · {appointment.provider.display_name}
+                      </Link>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {appointment.service.name} ·{" "}
+                      {formatInstant(appointment.starts_at, appointment.provider.timezone)}
+                    </p>
+                  </div>
+                  {cancellable ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={cancel.isPending}
+                      onClick={() => {
+                        const reason = window.prompt("Reason for cancellation (optional)") ?? "";
+                        cancel.mutate({ id: appointment.id, reason });
+                      }}
+                    >
+                      Cancel appointment
+                    </Button>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page <= 1}
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+            >
+              Previous
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={page >= totalPages}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export default function AdminAppointmentsPage() {
+  return (
+    <RequireRole roles={["ADMIN"]}>
+      <AdminAppointments />
+    </RequireRole>
+  );
+}

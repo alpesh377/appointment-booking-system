@@ -11,6 +11,10 @@ export class ApiError extends Error {
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function readCookie(name: string): string {
   if (typeof document === "undefined") return "";
   const match = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`));
@@ -36,7 +40,7 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   });
 
   const text = await response.text();
-  let body: any = null;
+  let body: unknown = null;
   try {
     body = text ? JSON.parse(text) : null;
   } catch {
@@ -44,11 +48,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   }
 
   if (!response.ok) {
+    const problem = isRecord(body) ? body : {};
     throw new ApiError(
       response.status,
-      body?.code ?? "REQUEST_FAILED",
-      body?.message ?? "The request could not be completed.",
-      body?.fields,
+      typeof problem.code === "string" ? problem.code : "REQUEST_FAILED",
+      typeof problem.message === "string" ? problem.message : "The request could not be completed.",
+      isRecord(problem.fields) ? (problem.fields as Record<string, string>) : undefined,
     );
   }
   return body as T;

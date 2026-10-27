@@ -1,9 +1,10 @@
 "use client";
 
-import * as React from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MotionConfig } from "motion/react";
+import * as React from "react";
 
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import type { User } from "@/lib/types";
 
 interface AuthContextValue {
@@ -31,12 +32,9 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
       await api.get("/api/health").catch(() => undefined);
       const current = await api.get<User>("/api/auth/me");
       setUser(current);
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        setUser(null);
-      } else {
-        setUser(null);
-      }
+    } catch {
+      // Any failure means there is no usable session; pages decide what to show.
+      setUser(null);
     } finally {
       setLoading(false);
     }
@@ -72,7 +70,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>{children}</AuthProvider>
+      <MotionConfig reducedMotion="user">
+        <AuthProvider>{children}</AuthProvider>
+      </MotionConfig>
     </QueryClientProvider>
   );
 }
