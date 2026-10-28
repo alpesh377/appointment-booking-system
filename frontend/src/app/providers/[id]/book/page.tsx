@@ -16,8 +16,17 @@ import { RequireRole } from "@/components/require-role";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input, Select, Textarea } from "@/components/ui/input";
+import { DatePicker } from "@/components/ui/date-picker";
+import { Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { formatDate, formatTime } from "@/lib/format";
@@ -73,7 +82,7 @@ function BookingForm() {
         `/api/availability?provider_id=${params.id}&service_id=${serviceId}` +
           `&date_from=${date}&date_to=${date}`,
       ),
-    enabled: Boolean(serviceId),
+    enabled: Boolean(serviceId && date),
   });
 
   const grouped = React.useMemo(() => {
@@ -151,19 +160,27 @@ function BookingForm() {
               <div className="space-y-1">
                 <Label htmlFor="service">Service</Label>
                 <Select
-                  id="service"
                   value={serviceId}
-                  onChange={(event) => {
-                    setServiceId(event.target.value);
+                  disabled={data.services.length === 0}
+                  onValueChange={(value) => {
+                    setServiceId(value);
                     setSlot(null);
                   }}
                 >
-                  {data.services.length === 0 ? <option value="">No services available</option> : null}
-                  {data.services.map((service) => (
-                    <option key={service.id} value={service.id}>
-                      {service.name} ({service.duration_minutes} min)
-                    </option>
-                  ))}
+                  <SelectTrigger id="service" aria-label="Service" className="h-10 w-full">
+                    <SelectValue
+                      placeholder={
+                        data.services.length === 0 ? "No services available" : "Choose a service"
+                      }
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {data.services.map((service) => (
+                      <SelectItem key={service.id} value={service.id}>
+                        {service.name} ({service.duration_minutes} min)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
                 {fieldErrors.service_id ? (
                   <p className="text-sm text-destructive">{fieldErrors.service_id}</p>
@@ -171,14 +188,14 @@ function BookingForm() {
               </div>
               <div className="space-y-1">
                 <Label htmlFor="date">Date</Label>
-                <Input
+                <DatePicker
                   id="date"
-                  type="date"
+                  className="w-full"
                   value={date}
-                  min={isoDate(0)}
-                  max={isoDate(30)}
-                  onChange={(event) => {
-                    setDate(event.target.value);
+                  from={isoDate(0)}
+                  to={isoDate(30)}
+                  onChange={(value) => {
+                    setDate(value);
                     setSlot(null);
                   }}
                 />
@@ -190,6 +207,8 @@ function BookingForm() {
               <p className="text-sm font-medium">Available times</p>
               {!serviceId ? (
                 <Alert variant="muted" title="Choose a service to see available times" />
+              ) : !date ? (
+                <Alert variant="muted" title="Choose a date to see available times" />
               ) : slots.isPending ? (
                 <div
                   role="status"
@@ -198,7 +217,7 @@ function BookingForm() {
                   aria-hidden
                 >
                   {Array.from({ length: 6 }).map((_, index) => (
-                    <div key={index} className="h-8 w-24 animate-pulse rounded-md bg-accent" />
+                    <Skeleton key={index} className="h-9 w-24" />
                   ))}
                 </div>
               ) : slots.isError ? (
@@ -223,11 +242,12 @@ function BookingForm() {
                                   const selected = slot === option;
                                   return (
                                     <Pressable key={option} className="relative">
-                                      <button
+                                      <Button
                                         type="button"
+                                        variant={selected ? "default" : "outline"}
                                         aria-pressed={selected}
                                         onClick={() => setSlot(option)}
-                                        className="relative inline-flex h-9 items-center justify-center rounded-md border border-input bg-background px-3 text-sm font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                                        className="relative h-9 px-3"
                                       >
                                         {selected ? (
                                           <SelectionHighlight
@@ -235,14 +255,10 @@ function BookingForm() {
                                             className="absolute inset-0 rounded-md bg-primary"
                                           />
                                         ) : null}
-                                        <span
-                                          className={
-                                            selected ? "relative z-10 text-primary-foreground" : "relative z-10"
-                                          }
-                                        >
+                                        <span className="relative z-10">
                                           {formatTime(option, timeZone)}
                                         </span>
-                                      </button>
+                                      </Button>
                                     </Pressable>
                                   );
                                 })}
@@ -271,13 +287,14 @@ function BookingForm() {
               <Alert variant="error" title="Booking could not be completed">
                 {error}
                 {error.toLowerCase().includes("no longer available") ? (
-                  <button
+                  <Button
                     type="button"
-                    className="mt-2 block text-sm font-medium underline"
+                    variant="link"
+                    className="mt-2 h-auto p-0"
                     onClick={() => void slots.refetch()}
                   >
                     Refresh availability
-                  </button>
+                  </Button>
                 ) : null}
               </Alert>
             ) : null}

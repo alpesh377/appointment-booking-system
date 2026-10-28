@@ -16,6 +16,8 @@ export function DatePicker({
   placeholder = "dd/mm/yyyy",
   className,
   disabled,
+  from,
+  to,
   "aria-label": ariaLabel,
 }: {
   id?: string;
@@ -25,10 +27,20 @@ export function DatePicker({
   placeholder?: string;
   className?: string;
   disabled?: boolean;
+  /** Earliest selectable day, ISO `yyyy-MM-dd`. Earlier days are disabled. */
+  from?: string;
+  /** Latest selectable day, ISO `yyyy-MM-dd`. Later days are disabled. */
+  to?: string;
   "aria-label"?: string;
 }) {
   const [open, setOpen] = React.useState(false);
   const selected = value ? parseISO(value) : undefined;
+  const unavailable = React.useMemo(() => {
+    const matchers: Array<{ before: Date } | { after: Date }> = [];
+    if (from) matchers.push({ before: parseISO(from) });
+    if (to) matchers.push({ after: parseISO(to) });
+    return matchers;
+  }, [from, to]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -53,6 +65,8 @@ export function DatePicker({
         <Calendar
           mode="single"
           selected={selected}
+          defaultMonth={selected ?? (from ? parseISO(from) : undefined)}
+          disabled={unavailable.length > 0 ? unavailable : undefined}
           onSelect={(next) => {
             onChange(next ? format(next, "yyyy-MM-dd") : "");
             setOpen(false);

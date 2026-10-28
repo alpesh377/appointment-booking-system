@@ -10,8 +10,11 @@ import { FadeIn, StatusBadge } from "@/components/motion";
 import { ErrorState, Loading } from "@/components/page-state";
 import { useAuth } from "@/components/providers";
 import { ReschedulePanel } from "@/components/reschedule-panel";
+import { Alert } from "@/components/ui/alert";
 import { StatusBadge as StaticStatusBadge } from "@/components/ui/badge";
+import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api, ApiError, errorMessage } from "@/lib/api";
 import { formatInstant, formatTime } from "@/lib/format";
@@ -63,10 +66,9 @@ function Detail() {
     <div className="mx-auto max-w-3xl space-y-6">
       {created ? (
         <FadeIn>
-          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            Appointment requested. The provider will confirm or reject it; the slot is held while it is
-            pending.
-          </div>
+          <Alert variant="success" title="Appointment requested">
+            The provider will confirm or reject it; the slot is held while it is pending.
+          </Alert>
         </FadeIn>
       ) : null}
 
@@ -113,37 +115,46 @@ function Detail() {
               <p className="font-medium">{data.provider.display_name}</p>
             </div>
           </div>
+          <Separator />
           <div>
             <p className="text-muted-foreground">Notes</p>
             <p>{data.notes ?? "No notes were added."}</p>
           </div>
           {data.cancelled_by_role ? (
-            <div>
-              <p className="text-muted-foreground">Cancelled by</p>
-              <p>
-                {data.cancelled_by_role}
-                {data.cancellation_reason ? ` — ${data.cancellation_reason}` : ""}
-              </p>
-            </div>
+            <>
+              <Separator />
+              <div>
+                <p className="text-muted-foreground">Cancelled by</p>
+                <p>
+                  {data.cancelled_by_role}
+                  {data.cancellation_reason ? ` — ${data.cancellation_reason}` : ""}
+                </p>
+              </div>
+            </>
           ) : null}
-          <div className="flex flex-wrap gap-4">
-            {data.rescheduled_from_id ? (
-              <Link
-                href={`/appointments/${data.rescheduled_from_id}`}
-                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Rescheduled from an earlier appointment
-              </Link>
-            ) : null}
-            {data.rescheduled_to_id ? (
-              <Link
-                href={`/appointments/${data.rescheduled_to_id}`}
-                className="text-sm font-medium text-primary underline-offset-4 hover:underline"
-              >
-                Rescheduled to a new appointment
-              </Link>
-            ) : null}
-          </div>
+          {data.rescheduled_from_id || data.rescheduled_to_id ? (
+            <>
+              <Separator />
+              <div className="flex flex-wrap gap-4">
+                {data.rescheduled_from_id ? (
+                  <Link
+                    href={`/appointments/${data.rescheduled_from_id}`}
+                    className={buttonVariants({ variant: "link", className: "h-auto p-0 text-sm" })}
+                  >
+                    Rescheduled from an earlier appointment
+                  </Link>
+                ) : null}
+                {data.rescheduled_to_id ? (
+                  <Link
+                    href={`/appointments/${data.rescheduled_to_id}`}
+                    className={buttonVariants({ variant: "link", className: "h-auto p-0 text-sm" })}
+                  >
+                    Rescheduled to a new appointment
+                  </Link>
+                ) : null}
+              </div>
+            </>
+          ) : null}
         </CardContent>
       </Card>
 

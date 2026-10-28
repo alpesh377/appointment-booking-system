@@ -56,6 +56,12 @@ def health() -> dict:
     return {"status": "ok", "environment": settings.app_env}
 
 
+@app.get("/health", include_in_schema=False)
+def health_alias() -> dict:
+    """Bare-path alias for probes and platforms that hardcode `/health`."""
+    return health()
+
+
 app.include_router(auth.router, prefix="/api")
 app.include_router(providers.router, prefix="/api")
 app.include_router(availability.router, prefix="/api")
