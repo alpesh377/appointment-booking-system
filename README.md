@@ -13,6 +13,8 @@ and the OpenSpec change in
 - **Backend:** Python FastAPI + Pydantic v2 + SQLAlchemy 2.0 + Alembic
 - **Database:** PostgreSQL 16 with `btree_gist`, `citext`, `timestamptz` and an exclusion constraint
 
+To demonstrate the app to someone else, follow [`docs/demo-guide.md`](docs/demo-guide.md).
+
 ## Prerequisites
 
 | Tool | Version |

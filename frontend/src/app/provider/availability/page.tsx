@@ -11,9 +11,17 @@ import { RequireRole } from "@/components/require-role";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { DatePicker } from "@/components/ui/date-picker";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { Input, Select, Textarea } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
@@ -227,25 +235,28 @@ function AvailabilityManager() {
           {windows.map((window, index) => (
             <div key={index} className="flex flex-wrap items-end gap-2">
               <Select
-                aria-label="Weekday"
-                className="w-36"
-                value={window.weekday}
-                onChange={(event) => {
+                value={String(window.weekday)}
+                onValueChange={(value) => {
                   const next = [...windows];
-                  next[index] = { ...window, weekday: Number(event.target.value) };
+                  next[index] = { ...window, weekday: Number(value) };
                   setWindows(next);
                 }}
               >
-                {WEEKDAYS.map((day, value) => (
-                  <option key={day} value={value}>
-                    {day}
-                  </option>
-                ))}
+                <SelectTrigger aria-label="Weekday" className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {WEEKDAYS.map((day, value) => (
+                    <SelectItem key={day} value={String(value)}>
+                      {day}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
               </Select>
               <Input
                 aria-label="Start time"
                 type="time"
-                className="w-32"
+                className="h-9 w-32"
                 value={window.start_time}
                 onChange={(event) => {
                   const next = [...windows];
@@ -256,7 +267,7 @@ function AvailabilityManager() {
               <Input
                 aria-label="End time"
                 type="time"
-                className="w-32"
+                className="h-9 w-32"
                 value={window.end_time}
                 onChange={(event) => {
                   const next = [...windows];
@@ -313,44 +324,49 @@ function AvailabilityManager() {
           {breaks.map((item, index) => (
             <div key={index} className="flex flex-wrap items-end gap-2">
               <Select
-                aria-label="Break type"
-                className="w-32"
                 value={item.kind}
-                onChange={(event) => {
+                onValueChange={(value) => {
                   const next = [...breaks];
-                  next[index] = { ...item, kind: event.target.value as "weekday" | "date" };
+                  next[index] = { ...item, kind: value as "weekday" | "date" };
                   setBreaks(next);
                 }}
               >
-                <option value="weekday">Weekly</option>
-                <option value="date">One date</option>
+                <SelectTrigger aria-label="Break type" className="w-32">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="weekday">Weekly</SelectItem>
+                  <SelectItem value="date">One date</SelectItem>
+                </SelectContent>
               </Select>
               {item.kind === "weekday" ? (
                 <Select
-                  aria-label="Break weekday"
-                  className="w-36"
-                  value={item.weekday}
-                  onChange={(event) => {
+                  value={String(item.weekday)}
+                  onValueChange={(value) => {
                     const next = [...breaks];
-                    next[index] = { ...item, weekday: Number(event.target.value) };
+                    next[index] = { ...item, weekday: Number(value) };
                     setBreaks(next);
                   }}
                 >
-                  {WEEKDAYS.map((day, value) => (
-                    <option key={day} value={value}>
-                      {day}
-                    </option>
-                  ))}
+                  <SelectTrigger aria-label="Break weekday" className="w-36">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WEEKDAYS.map((day, value) => (
+                      <SelectItem key={day} value={String(value)}>
+                        {day}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
                 </Select>
               ) : (
-                <Input
+                <DatePicker
                   aria-label="Break date"
-                  type="date"
-                  className="w-40"
+                  className="h-9 w-40"
                   value={item.date}
-                  onChange={(event) => {
+                  onChange={(value) => {
                     const next = [...breaks];
-                    next[index] = { ...item, date: event.target.value };
+                    next[index] = { ...item, date: value };
                     setBreaks(next);
                   }}
                 />
@@ -358,7 +374,7 @@ function AvailabilityManager() {
               <Input
                 aria-label="Break start"
                 type="time"
-                className="w-32"
+                className="h-9 w-32"
                 value={item.start_time}
                 onChange={(event) => {
                   const next = [...breaks];
@@ -369,7 +385,7 @@ function AvailabilityManager() {
               <Input
                 aria-label="Break end"
                 type="time"
-                className="w-32"
+                className="h-9 w-32"
                 value={item.end_time}
                 onChange={(event) => {
                   const next = [...breaks];
@@ -440,14 +456,13 @@ function AvailabilityManager() {
               <div className="flex flex-wrap items-end gap-2">
                 <div className="space-y-1">
                   <Label htmlFor={`override-date-${index}`}>Date</Label>
-                  <Input
+                  <DatePicker
                     id={`override-date-${index}`}
-                    type="date"
-                    className="w-40"
+                    className="h-9 w-40"
                     value={override.date}
-                    onChange={(event) => {
+                    onChange={(value) => {
                       const next = [...overrides];
-                      next[index] = { ...override, date: event.target.value };
+                      next[index] = { ...override, date: value };
                       setOverrides(next);
                     }}
                   />
@@ -455,17 +470,24 @@ function AvailabilityManager() {
                 <div className="space-y-1">
                   <Label htmlFor={`override-closed-${index}`}>Closed</Label>
                   <Select
-                    id={`override-closed-${index}`}
-                    className="w-32"
                     value={override.is_closed ? "closed" : "open"}
-                    onChange={(event) => {
+                    onValueChange={(value) => {
                       const next = [...overrides];
-                      next[index] = { ...override, is_closed: event.target.value === "closed" };
+                      next[index] = { ...override, is_closed: value === "closed" };
                       setOverrides(next);
                     }}
                   >
-                    <option value="open">Open with hours</option>
-                    <option value="closed">Closed all day</option>
+                    <SelectTrigger
+                      id={`override-closed-${index}`}
+                      aria-label="Closed"
+                      className="w-40"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="open">Open with hours</SelectItem>
+                      <SelectItem value="closed">Closed all day</SelectItem>
+                    </SelectContent>
                   </Select>
                 </div>
                 <Button
@@ -483,7 +505,7 @@ function AvailabilityManager() {
                       <Input
                         aria-label="Override start"
                         type="time"
-                        className="w-32"
+                        className="h-9 w-32"
                         value={window.start_time}
                         onChange={(event) => {
                           const next = [...overrides];
@@ -499,7 +521,7 @@ function AvailabilityManager() {
                       <Input
                         aria-label="Override end"
                         type="time"
-                        className="w-32"
+                        className="h-9 w-32"
                         value={window.end_time}
                         onChange={(event) => {
                           const next = [...overrides];

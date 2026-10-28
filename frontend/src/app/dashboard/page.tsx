@@ -4,12 +4,19 @@ import * as React from "react";
 import { useQuery } from "@tanstack/react-query";
 
 import { AppointmentCard } from "@/components/appointment-card";
+import { DateFilter } from "@/components/date-filter";
 import { ErrorState, Loading, NoItems } from "@/components/page-state";
 import { RequireRole } from "@/components/require-role";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input, Select } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api, errorMessage } from "@/lib/api";
 import type { Appointment } from "@/lib/types";
 
@@ -76,33 +83,25 @@ function CustomerDashboard() {
         <CardContent className="grid gap-3 pt-6 sm:grid-cols-3">
           <div className="space-y-1">
             <Label htmlFor="status-filter">Status</Label>
-            <Select id="status-filter" value={status} onChange={(event) => setStatus(event.target.value)}>
-              <option value="">Any status</option>
-              {STATUSES.map((item) => (
-                <option key={item} value={item}>
-                  {item.charAt(0) + item.slice(1).toLowerCase()}
-                </option>
-              ))}
+            <Select
+              value={status || "all"}
+              onValueChange={(value) => setStatus(value === "all" ? "" : value)}
+            >
+              <SelectTrigger id="status-filter" className="h-10 w-full">
+                <SelectValue placeholder="Any status" />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="all">Any status</SelectItem>
+                {STATUSES.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item.charAt(0) + item.slice(1).toLowerCase()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="date-from">From date</Label>
-            <Input
-              id="date-from"
-              type="date"
-              value={dateFrom}
-              onChange={(event) => setDateFrom(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="date-to">To date</Label>
-            <Input
-              id="date-to"
-              type="date"
-              value={dateTo}
-              onChange={(event) => setDateTo(event.target.value)}
-            />
-          </div>
+          <DateFilter id="date-from" label="From date" value={dateFrom} onChange={setDateFrom} />
+          <DateFilter id="date-to" label="To date" value={dateTo} onChange={setDateTo} />
         </CardContent>
       </Card>
 

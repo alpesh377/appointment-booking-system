@@ -4,14 +4,21 @@ import * as React from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { DateFilter } from "@/components/date-filter";
 import { ErrorState, NoItems } from "@/components/page-state";
 import { RequireRole } from "@/components/require-role";
 import { Alert } from "@/components/ui/alert";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input, Select } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toastError, toastSuccess } from "@/components/ui/toast";
 import { api, errorMessage } from "@/lib/api";
@@ -124,81 +131,87 @@ function AdminAppointments() {
           <div className="space-y-1">
             <Label htmlFor="admin-status">Status</Label>
             <Select
-              id="admin-status"
-              value={status}
-              onChange={(event) => {
-                setStatus(event.target.value);
+              value={status || "all"}
+              onValueChange={(value) => {
+                setStatus(value === "all" ? "" : value);
                 setPage(1);
               }}
             >
-              <option value="">Any status</option>
-              {STATUSES.map((item) => (
-                <option key={item} value={item}>
-                  {item.charAt(0) + item.slice(1).toLowerCase()}
-                </option>
-              ))}
+              <SelectTrigger id="admin-status" className="h-10 w-full">
+                <SelectValue placeholder="Any status" />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="all">Any status</SelectItem>
+                {STATUSES.map((item) => (
+                  <SelectItem key={item} value={item}>
+                    {item.charAt(0) + item.slice(1).toLowerCase()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
             <Label htmlFor="admin-provider">Provider</Label>
             <Select
-              id="admin-provider"
-              value={providerId}
-              onChange={(event) => {
-                setProviderId(event.target.value);
+              value={providerId || "all"}
+              onValueChange={(value) => {
+                setProviderId(value === "all" ? "" : value);
                 setPage(1);
               }}
             >
-              <option value="">Any provider</option>
-              {providers.data?.map((provider) => (
-                <option key={provider.id} value={provider.id}>
-                  {provider.display_name}
-                </option>
-              ))}
+              <SelectTrigger id="admin-provider" className="h-10 w-full">
+                <SelectValue placeholder="Any provider" />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="all">Any provider</SelectItem>
+                {providers.data?.map((provider) => (
+                  <SelectItem key={provider.id} value={provider.id}>
+                    {provider.display_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
           <div className="space-y-1">
             <Label htmlFor="admin-customer">Customer</Label>
             <Select
-              id="admin-customer"
-              value={customerId}
-              onChange={(event) => {
-                setCustomerId(event.target.value);
+              value={customerId || "all"}
+              onValueChange={(value) => {
+                setCustomerId(value === "all" ? "" : value);
                 setPage(1);
               }}
             >
-              <option value="">Any customer</option>
-              {customers.data?.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.full_name}
-                </option>
-              ))}
+              <SelectTrigger id="admin-customer" className="h-10 w-full">
+                <SelectValue placeholder="Any customer" />
+              </SelectTrigger>
+              <SelectContent position="popper" align="start">
+                <SelectItem value="all">Any customer</SelectItem>
+                {customers.data?.map((customer) => (
+                  <SelectItem key={customer.id} value={customer.id}>
+                    {customer.full_name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="admin-from">From</Label>
-            <Input
-              id="admin-from"
-              type="date"
-              value={dateFrom}
-              onChange={(event) => {
-                setDateFrom(event.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label htmlFor="admin-to">To</Label>
-            <Input
-              id="admin-to"
-              type="date"
-              value={dateTo}
-              onChange={(event) => {
-                setDateTo(event.target.value);
-                setPage(1);
-              }}
-            />
-          </div>
+          <DateFilter
+            id="admin-from"
+            label="From"
+            value={dateFrom}
+            onChange={(value) => {
+              setDateFrom(value);
+              setPage(1);
+            }}
+          />
+          <DateFilter
+            id="admin-to"
+            label="To"
+            value={dateTo}
+            onChange={(value) => {
+              setDateTo(value);
+              setPage(1);
+            }}
+          />
         </CardContent>
       </Card>
 
